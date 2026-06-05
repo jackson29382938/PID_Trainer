@@ -194,7 +194,7 @@ export default function DroneScene({
   targetYRef.current = targetAltitude;
 
   return (
-    <div ref={sceneRef} style={{ width: '100%', height: '100%' }}>
+    <div ref={sceneRef} style={{ position: 'absolute', inset: 0 }}>
       <Canvas
         shadows
         camera={{ position: [6, 4, 6], fov: 45, near: 0.1, far: 50 }}
