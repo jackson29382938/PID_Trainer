@@ -48,6 +48,25 @@ function loadBests() {
   }
 }
 
+const LAYOUT_KEY = 'pidTrainerLayout';
+const LAYOUT_DEFAULTS = { panelWidth: 360, graphHeight: 220 };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Bounds keep each panel usable: the scene always keeps room and panels never
+// collapse to nothing or exceed the viewport.
+const minPanelWidth = () => 240;
+const maxPanelWidth = () => Math.max(260, window.innerWidth - 320);
+const minGraphHeight = () => 120;
+const maxGraphHeight = () => Math.max(140, window.innerHeight - 220);
+
+function loadLayout() {
+  try {
+    return { ...LAYOUT_DEFAULTS, ...JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') };
+  } catch {
+    return { ...LAYOUT_DEFAULTS };
+  }
+}
+
 export default function App() {
   const [scenarioId, setScenarioId] = useState(0);
   const [pidValues, setPidValues] = useState({ p: 2, i: 0.1, d: 0.5 });
@@ -59,6 +78,7 @@ export default function App() {
   const [historySnapshot, setHistorySnapshot] = useState([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [bestScores, setBestScores] = useState(loadBests);
+  const [layout, setLayout] = useState(loadLayout);
 
   const simStateRef = useRef(createDroneState());
   const controllerRef = useRef(new PIDController(2, 0.1, 0.5));
@@ -70,6 +90,8 @@ export default function App() {
   const thrustRef = useRef(0);
   const lastSnapshotTime = useRef(0);
   const accumulatorRef = useRef(0);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
 
   pidRef.current = pidValues;
   scenarioRef.current = SCENARIOS[scenarioId];
@@ -147,6 +169,52 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleRunning, reset]);
 
+  // Drag-to-resize the panels. 'width' adjusts the control panel, 'height' the
+  // graph panel; the scene fills whatever is left.
+  const startResize = useCallback((axis) => (e) => {
+    e.preventDefault();
+    const onMove = (ev) => {
+      if (axis === 'width') {
+        const w = clamp(window.innerWidth - ev.clientX, minPanelWidth(), maxPanelWidth());
+        setLayout(prev => ({ ...prev, panelWidth: w }));
+      } else {
+        const h = clamp(window.innerHeight - ev.clientY, minGraphHeight(), maxGraphHeight());
+        setLayout(prev => ({ ...prev, graphHeight: h }));
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layoutRef.current)); } catch { /* ignore */ }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = axis === 'width' ? 'col-resize' : 'row-resize';
+  }, []);
+
+  const resetResize = useCallback((axis) => () => {
+    setLayout(prev => {
+      const next = axis === 'width'
+        ? { ...prev, panelWidth: LAYOUT_DEFAULTS.panelWidth }
+        : { ...prev, graphHeight: LAYOUT_DEFAULTS.graphHeight };
+      try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Keep panel sizes valid when the window itself is resized.
+  useEffect(() => {
+    const onResize = () => setLayout(prev => ({
+      panelWidth: clamp(prev.panelWidth, minPanelWidth(), maxPanelWidth()),
+      graphHeight: clamp(prev.graphHeight, minGraphHeight(), maxGraphHeight()),
+    }));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     if (!running) return;
 
@@ -223,7 +291,13 @@ export default function App() {
   }, [running, recordBest]);
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      style={{
+        '--panel-width': layout.panelWidth + 'px',
+        '--graph-height': layout.graphHeight + 'px',
+      }}
+    >
       <header className="app-header">
         <div className="header-left">
           <span className="header-icon">⟐</span>
@@ -320,8 +394,26 @@ export default function App() {
           )}
           <ScoreDisplay metrics={metrics} best={best} />
         </div>
+        <div
+          className="resizer resizer-v"
+          onPointerDown={startResize('width')}
+          onDoubleClick={resetResize('width')}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize control panel"
+          title="Drag to resize · double-click to reset"
+        />
       </main>
 
+      <div
+        className="resizer resizer-h"
+        onPointerDown={startResize('height')}
+        onDoubleClick={resetResize('height')}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize graph panel"
+        title="Drag to resize · double-click to reset"
+      />
       <div className="graph-panel">
         <div className="graph-header">
           <span>Altitude Response</span>

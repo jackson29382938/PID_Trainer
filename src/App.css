@@ -31,8 +31,9 @@ body {
 }
 
 .app {
+  position: relative;
   display: grid;
-  grid-template-rows: 48px 1fr 220px;
+  grid-template-rows: 48px 1fr var(--graph-height, 220px);
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
@@ -168,10 +169,65 @@ body {
 
 /* ─── Main Layout ─── */
 .app-main {
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr var(--panel-width, 360px);
   min-height: 0;
   overflow: hidden;
+}
+
+/* ─── Resizers ─── */
+.resizer {
+  position: absolute;
+  z-index: 25;
+  background: transparent;
+  touch-action: none;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  background: var(--border);
+  transition: background 0.15s;
+}
+
+.resizer:hover::after,
+.resizer:active::after {
+  background: var(--accent);
+}
+
+/* Vertical handle on the seam between the scene and the control panel. */
+.resizer-v {
+  top: 0;
+  bottom: 0;
+  right: var(--panel-width, 360px);
+  width: 10px;
+  transform: translateX(50%);
+  cursor: col-resize;
+}
+.resizer-v::after {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+/* Horizontal handle on the seam between the main area and the graph panel. */
+.resizer-h {
+  left: 0;
+  right: 0;
+  bottom: var(--graph-height, 220px);
+  height: 10px;
+  transform: translateY(50%);
+  cursor: row-resize;
+}
+.resizer-h::after {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
 }
 
 .scene-panel {
@@ -755,11 +811,6 @@ body {
 .panel-toggle:hover { background: var(--bg-tertiary); }
 
 /* ─── Responsive ─── */
-@media (max-width: 900px) {
-  .app-main {
-    grid-template-columns: 1fr 300px;
-  }
-}
 
 @media (max-width: 700px) {
   .app {
@@ -768,6 +819,7 @@ body {
   .app-main {
     grid-template-columns: 1fr;
   }
+  .resizer { display: none; }
   .panel-toggle { display: flex; }
   .control-panel {
     position: absolute;
