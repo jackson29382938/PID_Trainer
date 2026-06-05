@@ -1,13 +1,19 @@
 import React from 'react';
 import SCENARIOS from '../scenarios/scenarios';
 
-export default function ScenarioPanel({ scenarioId, onSelect, disabled }) {
+export default function ScenarioPanel({ scenarioId, onSelect, disabled, bestScores = {} }) {
   const scenario = SCENARIOS[scenarioId];
+
+  const totalStars = SCENARIOS.reduce((sum, s, i) => sum + (bestScores[i]?.stars || 0), 0);
+  const maxStars = SCENARIOS.length * 3;
 
   return (
     <div className="scenario-panel">
       <div className="scenario-header">
         <span className="scenario-title">Scenario</span>
+        <span className="scenario-progress" title="Total stars earned">
+          ★ {totalStars}/{maxStars}
+        </span>
       </div>
       <select
         className="scenario-select"
@@ -15,11 +21,15 @@ export default function ScenarioPanel({ scenarioId, onSelect, disabled }) {
         onChange={e => onSelect(parseInt(e.target.value))}
         disabled={disabled}
       >
-        {SCENARIOS.map((s, i) => (
-          <option key={s.id} value={i}>
-            {s.icon} {s.name}
-          </option>
-        ))}
+        {SCENARIOS.map((s, i) => {
+          const stars = bestScores[i]?.stars || 0;
+          const badge = stars > 0 ? '  ' + '★'.repeat(stars) : '';
+          return (
+            <option key={s.id} value={i}>
+              {s.icon} {s.name}{badge}
+            </option>
+          );
+        })}
       </select>
       {scenario && (
         <div className="scenario-description">

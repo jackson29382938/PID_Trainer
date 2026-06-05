@@ -49,9 +49,30 @@ npm run preview  # preview the production build
 Each scenario is solvable to a 3-star (≥90) score; the documented `idealP/I/D`
 values in `src/scenarios/scenarios.js` are verified to earn three stars.
 
+## Live tools
+
+- **Live tuning** — adjust the PID gains (and the physics) while a run is in
+  progress and watch the response change immediately.
+- **Step Response HUD** — live Rise / Overshoot / Settle / SS Err readout.
+- **PID Output HUD** — diverging bars showing how much the P, I and D terms each
+  contribute to the thrust command right now.
+- **Physics panel** — Mass, Drag, Delay (actuator lag), Noise (sensor noise) and
+  CG (center-of-gravity offset). Defaults match the tuned scenarios.
+- **Per-motor heat** — each of the four motors heats with load and cools over
+  time; shown as a HUD and as a red-hot glow on the 3D model. CG offset loads
+  one side harder.
+- **Auto-tune** — searches for good gains against the current scenario *and* the
+  current physics, then applies them.
+- **Disturb** — injects a sudden shove mid-run so you can watch the controller
+  recover.
+- **Ghost comparison** — your previous completed run is overlaid on the graph
+  (toggle in the graph header) so you can see whether a change actually helped.
+
 ## Tips
 
 - **Space** plays/pauses, **R** resets.
-- Your best score per scenario is saved locally (in the browser).
+- Best score/stars per scenario are saved locally, and the scenario picker shows
+  your total stars.
+- Drag the seams between panels to resize them (double-click a seam to reset).
 - Watch the live graph: overshoot points to P (or I), a persistent gap points to
   I, and a slow, laggy climb points to too much D.

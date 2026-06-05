@@ -8,6 +8,12 @@ export default class PIDController {
     this.outputMin = -12;
     this.outputMax = 12;
     this.integralMax = 2;
+    // Most recent (pre-clamp) contribution of each term, exposed for the live
+    // breakdown HUD. `output` is the final clamped command.
+    this.pTerm = 0;
+    this.iTerm = 0;
+    this.dTerm = 0;
+    this.output = 0;
   }
 
   setGains(kp, ki, kd) {
@@ -27,12 +33,21 @@ export default class PIDController {
     const derivative = dt > 0.001 ? (error - this.prevError) / dt : 0;
     this.prevError = error;
 
-    const output = this.kp * error + this.ki * this.integral + this.kd * derivative;
-    return Math.max(this.outputMin, Math.min(this.outputMax, output));
+    this.pTerm = this.kp * error;
+    this.iTerm = this.ki * this.integral;
+    this.dTerm = this.kd * derivative;
+
+    const output = this.pTerm + this.iTerm + this.dTerm;
+    this.output = Math.max(this.outputMin, Math.min(this.outputMax, output));
+    return this.output;
   }
 
   reset() {
     this.integral = 0;
     this.prevError = 0;
+    this.pTerm = 0;
+    this.iTerm = 0;
+    this.dTerm = 0;
+    this.output = 0;
   }
 }

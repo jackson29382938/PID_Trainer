@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import SCENARIOS from './scenarios/scenarios';
 import PIDController from './physics/PIDController';
 import { createDroneState, stepPhysics } from './physics/DronePhysics';
 import { computeMetrics, computeHints, computeLiveMetrics } from './scoring/scoring';
-import DroneScene from './components/DroneScene';
+// The 3D scene pulls in three.js / r3f; load it lazily so the app shell paints
+// first and the heavy libraries download in their own chunk.
+const DroneScene = lazy(() => import('./components/DroneScene'));
 import PIDControls from './components/PIDControls';
 import PhysicsControls, { PHYSICS_DEFAULTS } from './components/PhysicsControls';
 import ErrorGraph from './components/ErrorGraph';
@@ -12,6 +14,7 @@ import ScoreDisplay from './components/ScoreDisplay';
 import SimulationControls from './components/SimulationControls';
 import MetricsHUD from './components/MetricsHUD';
 import MotorHeat from './components/MotorHeat';
+import OutputHUD from './components/OutputHUD';
 
 // Deterministic high-frequency sensor noise (scaled by the NOISE physics param).
 function sensorNoise(time) {
@@ -20,6 +23,80 @@ function sensorNoise(time) {
     0.7 * Math.sin(time * 67.1 + 1.0) +
     0.5 * Math.sin(time * 113.9 + 2.0)
   );
+}
+
+// Headless run of a full scenario with given gains/physics, returning its score.
+// Shared by the auto-tuner.
+function simulateScore(scenario, physics, gains) {
+  const sim = createDroneState();
+  const c = new PIDController(gains.p, gains.i, gains.d);
+  const hist = [];
+  while (sim.time < scenario.duration) {
+    const wind = scenario.windEnabled ? windForce(scenario.windStrength, sim.time) : 0;
+    const meas = physics.noise > 0
+      ? sim.position + physics.noise * 0.05 * sensorNoise(sim.time)
+      : sim.position;
+    const out = c.update(scenario.targetAltitude, meas, FIXED_DT);
+    stepPhysics(sim, out, wind, FIXED_DT, physics);
+    hist.push({
+      time: sim.time,
+      position: sim.position,
+      error: scenario.targetAltitude - sim.position,
+    });
+  }
+  return computeMetrics(hist, scenario.targetAltitude, scenario.duration).total;
+}
+
+// Coarse grid search followed by a local refine. Cheap enough (~550 short sims)
+// to run synchronously on a button press.
+function autoTune(scenario, physics) {
+  const round = (v, step) => Math.round(v / step) * step;
+  let best = -1;
+  let bestG = { p: 2, i: 0.1, d: 0.5 };
+
+  const search = (Ps, Is, Ds) => {
+    for (const p of Ps) for (const i of Is) for (const d of Ds) {
+      const total = simulateScore(scenario, physics, { p, i, d });
+      if (total > best) { best = total; bestG = { p, i, d }; }
+    }
+  };
+
+  search(
+    [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5],
+    [0, 0.15, 0.3, 0.45, 0.6, 0.8],
+    [0, 0.5, 1, 1.5, 2, 2.5, 3],
+  );
+
+  const span = (c, step, lo, hi) => {
+    const a = [];
+    for (let k = -2; k <= 2; k++) {
+      const v = +(c + k * step).toFixed(3);
+      if (v >= lo && v <= hi) a.push(v);
+    }
+    return a;
+  };
+  search(span(bestG.p, 0.2, 0, 10), span(bestG.i, 0.05, 0, 2.5), span(bestG.d, 0.2, 0, 7));
+
+  return {
+    p: clamp(round(bestG.p, 0.1), 0, 10),
+    i: clamp(round(bestG.i, 0.05), 0, 2.5),
+    d: clamp(round(bestG.d, 0.1), 0, 7),
+    total: best,
+  };
+}
+
+// Keep at most `max` evenly-spaced samples — used to store a lightweight ghost
+// of a completed run for overlay.
+function downsample(arr, max) {
+  if (arr.length <= max) return arr.map(h => ({ time: h.time, position: h.position }));
+  const step = arr.length / max;
+  const out = [];
+  for (let i = 0; i < max; i++) {
+    const h = arr[Math.floor(i * step)];
+    out.push({ time: h.time, position: h.position });
+  }
+  out.push({ time: arr[arr.length - 1].time, position: arr[arr.length - 1].position });
+  return out;
 }
 
 // Fixed physics timestep. Decoupling integration from the render rate keeps the
@@ -94,6 +171,10 @@ export default function App() {
   const [physics, setPhysics] = useState({ ...PHYSICS_DEFAULTS });
   const [liveMetrics, setLiveMetrics] = useState(null);
   const [motorHeat, setMotorHeat] = useState([0, 0, 0, 0]);
+  const [pidTerms, setPidTerms] = useState(null);
+  const [ghost, setGhost] = useState(null);
+  const [showGhost, setShowGhost] = useState(true);
+  const [tuning, setTuning] = useState(false);
 
   const simStateRef = useRef(createDroneState());
   const controllerRef = useRef(new PIDController(2, 0.1, 0.5));
@@ -110,6 +191,8 @@ export default function App() {
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
   const motorHeatRef = useRef([0, 0, 0, 0]);
+  const pidTermsRef = useRef(null);
+  const impulseRef = useRef(0);
 
   pidRef.current = pidValues;
   scenarioRef.current = SCENARIOS[scenarioId];
@@ -139,6 +222,8 @@ export default function App() {
     lastSnapshotTime.current = 0;
     accumulatorRef.current = 0;
     motorHeatRef.current = [0, 0, 0, 0];
+    pidTermsRef.current = null;
+    impulseRef.current = 0;
   }, []);
 
   const reset = useCallback(() => {
@@ -150,6 +235,7 @@ export default function App() {
     setHistorySnapshot([]);
     setLiveMetrics(null);
     setMotorHeat([0, 0, 0, 0]);
+    setPidTerms(null);
   }, [resetSimRefs]);
 
   useEffect(() => {
@@ -158,6 +244,7 @@ export default function App() {
       i: scenario.initialI,
       d: scenario.initialD,
     });
+    setGhost(null);
     reset();
   }, [scenarioId]);
 
@@ -170,11 +257,29 @@ export default function App() {
       setHistorySnapshot([]);
       setLiveMetrics(null);
       setMotorHeat([0, 0, 0, 0]);
+      setPidTerms(null);
       setRunning(true);
     } else {
       setRunning(r => !r);
     }
   }, [completed, resetSimRefs]);
+
+  // Auto-tune: search for good gains against the current scenario AND the
+  // current physics, then apply them. Deferred a tick so the spinner can paint.
+  const handleAutoTune = useCallback(() => {
+    setTuning(true);
+    setTimeout(() => {
+      const best = autoTune(scenarioRef.current, physicsRef.current);
+      setPidValues({ p: best.p, i: best.i, d: best.d });
+      setTuning(false);
+    }, 30);
+  }, []);
+
+  // Inject a sudden downward shove to test disturbance rejection (only while
+  // running). Applied on the next physics step.
+  const handleDisturb = useCallback(() => {
+    impulseRef.current -= 5;
+  }, []);
 
   // Keyboard shortcuts: Space = play/pause, R = reset. Ignored while typing.
   useEffect(() => {
@@ -253,6 +358,12 @@ export default function App() {
       setHistorySnapshot([...historyRef.current]);
       setHints([]);
       recordBest(scen.id, m);
+      // Stash this run as the ghost so the next run can be compared against it.
+      setGhost({
+        data: downsample(historyRef.current, 400),
+        gains: { ...pidRef.current },
+        total: m.total,
+      });
     };
 
     const tick = (now) => {
@@ -274,6 +385,11 @@ export default function App() {
           return;
         }
         const phys = physicsRef.current;
+        // Apply a pending manual disturbance as a one-shot velocity impulse.
+        if (impulseRef.current !== 0) {
+          sim.velocity += impulseRef.current;
+          impulseRef.current = 0;
+        }
         const wind = scen.windEnabled ? windForce(scen.windStrength, sim.time) : 0;
         // The controller only ever sees the (optionally noisy) measured altitude.
         const measurement = phys.noise > 0
@@ -285,6 +401,12 @@ export default function App() {
         droneYRef.current = sim.position;
         thrustRef.current = result.thrustPercent;
         motorHeatRef.current = result.motorHeat;
+        pidTermsRef.current = {
+          p: controller.pTerm,
+          i: controller.iTerm,
+          d: controller.dTerm,
+          output: controller.output,
+        };
 
         historyRef.current.push({
           time: sim.time,
@@ -306,6 +428,7 @@ export default function App() {
         setHistorySnapshot([...historyRef.current]);
         setLiveMetrics(computeLiveMetrics(historyRef.current, scen.targetAltitude));
         setMotorHeat([...motorHeatRef.current]);
+        setPidTerms(pidTermsRef.current);
         if (scen.liveHints !== false) {
           setHints(computeHints(historyRef.current, scen.targetAltitude, pidRef.current, sim.time));
         }
@@ -380,16 +503,23 @@ export default function App() {
 
       <main className="app-main">
         <div className="scene-panel">
-          <DroneScene
-            yRef={droneYRef}
-            targetAltitude={scenario.targetAltitude}
-            thrustRef={thrustRef}
-            motorHeatRef={motorHeatRef}
-            isRunning={running || completed}
-            windStrength={scenario.windEnabled ? scenario.windStrength : 0}
-          />
-          <MetricsHUD metrics={liveMetrics} target={scenario.targetAltitude} />
-          <MotorHeat heat={motorHeat} />
+          <Suspense fallback={<div className="scene-loading">Loading 3D scene…</div>}>
+            <DroneScene
+              yRef={droneYRef}
+              targetAltitude={scenario.targetAltitude}
+              thrustRef={thrustRef}
+              motorHeatRef={motorHeatRef}
+              isRunning={running || completed}
+              windStrength={scenario.windEnabled ? scenario.windStrength : 0}
+            />
+          </Suspense>
+          <div className="hud-anchor tl">
+            <MetricsHUD metrics={liveMetrics} target={scenario.targetAltitude} />
+            <OutputHUD terms={pidTerms} />
+          </div>
+          <div className="hud-anchor br">
+            <MotorHeat heat={motorHeat} />
+          </div>
           {hints.length > 0 && running && (
             <div className="flight-analysis">
               <div className="hints-title">Live Flight Analysis</div>
@@ -412,6 +542,7 @@ export default function App() {
             scenarioId={scenarioId}
             onSelect={setScenarioId}
             disabled={running}
+            bestScores={bestScores}
           />
           <PIDControls
             values={pidValues}
@@ -425,9 +556,12 @@ export default function App() {
             running={running}
             completed={completed}
             speed={speed}
+            tuning={tuning}
             onToggle={toggleRunning}
             onReset={reset}
             onSpeedChange={setSpeed}
+            onAutoTune={handleAutoTune}
+            onDisturb={handleDisturb}
           />
           <ScoreDisplay metrics={metrics} best={best} />
         </div>
@@ -458,9 +592,23 @@ export default function App() {
             <span className="legend-item"><span className="legend-dot" style={{ background: '#00d4ff' }} /> Drone</span>
             <span className="legend-item"><span className="legend-dot" style={{ background: '#00ff88' }} /> Target</span>
             <span className="legend-item"><span className="legend-dot" style={{ background: '#ff4757', opacity: 0.4 }} /> Error</span>
+            {ghost && (
+              <button
+                className={`graph-ghost-toggle ${showGhost ? 'active' : ''}`}
+                onClick={() => setShowGhost(v => !v)}
+                title="Toggle the previous run overlay"
+              >
+                <span className="legend-dot legend-dot-ghost" />
+                Previous{ghost.gains ? ` (${ghost.total})` : ''}
+              </button>
+            )}
           </span>
         </div>
-        <ErrorGraph history={historySnapshot} targetAltitude={scenario.targetAltitude} />
+        <ErrorGraph
+          history={historySnapshot}
+          targetAltitude={scenario.targetAltitude}
+          ghost={showGhost && ghost ? ghost.data : null}
+        />
       </div>
     </div>
   );

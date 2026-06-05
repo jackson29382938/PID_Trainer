@@ -3,7 +3,7 @@ import React, { useRef, useEffect } from 'react';
 const WINDOW_SECONDS = 15;
 const PADDING = { top: 20, right: 20, bottom: 35, left: 55 };
 
-export default function ErrorGraph({ history, targetAltitude }) {
+export default function ErrorGraph({ history, targetAltitude, ghost }) {
   const canvasRef = useRef(null);
   const drawRef = useRef(() => {});
 
@@ -121,6 +121,27 @@ export default function ErrorGraph({ history, targetAltitude }) {
       ctx.stroke();
       ctx.setLineDash([]);
 
+      // Ghost: the previous completed run, for before/after comparison.
+      if (ghost && ghost.length > 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(PADDING.left, PADDING.top, innerW, innerH);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(170, 180, 210, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        for (let i = 0; i < ghost.length; i++) {
+          const gx = scaleX(ghost[i].time);
+          const gy = scaleY(ghost[i].position);
+          if (i === 0) ctx.moveTo(gx, gy);
+          else ctx.lineTo(gx, gy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
       if (!history || history.length < 2) return;
 
       const visible = history.filter(h => h.time >= windowStart);
@@ -196,7 +217,7 @@ export default function ErrorGraph({ history, targetAltitude }) {
 
     drawRef.current = draw;
     draw();
-  }, [history, targetAltitude]);
+  }, [history, targetAltitude, ghost]);
 
   // Size the canvas to its container and repaint on resize (set up once).
   useEffect(() => {
