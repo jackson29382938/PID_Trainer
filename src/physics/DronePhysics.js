@@ -2,7 +2,10 @@ export const PHYSICS = {
   mass: 1.0,
   gravity: 9.81,
   maxThrust: 22.0,
-  dragCoeff: 0.6,
+  // Light aerodynamic drag: enough to be realistic, but low enough that
+  // mis-tuned gains (high P, integral windup) actually overshoot and oscillate
+  // the way the scenarios describe instead of being silently damped out.
+  dragCoeff: 0.2,
   groundRestitution: 0.2,
 };
 

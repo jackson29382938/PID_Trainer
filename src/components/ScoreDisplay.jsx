@@ -31,11 +31,21 @@ function ScoreGauge({ value, maxValue, label, color, unit = '' }) {
   );
 }
 
-export default function ScoreDisplay({ metrics }) {
+export default function ScoreDisplay({ metrics, best }) {
   if (!metrics || !metrics.total) {
     return (
       <div className="score-display">
         <div className="score-empty">Run a simulation to see your score</div>
+        {best && (
+          <div className="score-best">
+            Personal best: <strong>{best.total}</strong>
+            <span className="score-best-stars">
+              {[1, 2, 3].map(i => (
+                <Star key={i} filled={i <= best.stars} size={11} />
+              ))}
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -43,6 +53,7 @@ export default function ScoreDisplay({ metrics }) {
   const { total, stars, overshootPct, settlingTime, steadyStateError, itae, analysis } = metrics;
 
   const scoreColor = total >= 90 ? '#00ff88' : total >= 70 ? '#ffa502' : total >= 40 ? '#ff6b6b' : '#ff4757';
+  const isNewBest = !best || total >= best.total;
 
   return (
     <div className="score-display">
@@ -54,6 +65,11 @@ export default function ScoreDisplay({ metrics }) {
         </div>
         <div className="score-number" style={{ color: scoreColor }}>{total}</div>
         <div className="score-label">Score</div>
+        {best && (
+          isNewBest
+            ? <div className="score-newbest">★ New personal best!</div>
+            : <div className="score-best">Best: <strong>{best.total}</strong></div>
+        )}
       </div>
 
       <div className="score-metrics">

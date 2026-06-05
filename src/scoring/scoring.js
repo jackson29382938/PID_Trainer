@@ -20,21 +20,26 @@ export function computeMetrics(history, targetAltitude, simDuration) {
     ? Math.max(0, ((peak - target) / target) * 100)
     : 0;
 
+  // Settling time = the first moment the response enters the ±5% band and then
+  // holds it for a sustained dwell. A dwell test (rather than "in band until the
+  // very end") is robust to isolated wind gusts in disturbance scenarios, while
+  // still penalising genuine oscillation — which never holds the band that long.
   const settleBand = target * 0.05;
+  const SETTLE_DWELL = 1.5;
   let settlingTime = simDuration;
-  const reversed = [...relevantHistory].reverse();
-  for (let i = 0; i < reversed.length; i++) {
-    const h = reversed[i];
-    const inBand = Math.abs(h.position - target) < settleBand;
-    if (inBand) {
-      const allAfterInBand = reversed.slice(0, i + 1).every(hh => Math.abs(hh.position - target) < settleBand);
-      if (allAfterInBand) {
-        settlingTime = h.time;
+  let bandEntry = null;
+  for (let i = 0; i < relevantHistory.length; i++) {
+    const h = relevantHistory[i];
+    if (Math.abs(h.position - target) < settleBand) {
+      if (bandEntry === null) bandEntry = h.time;
+      if (h.time - bandEntry >= SETTLE_DWELL) {
+        settlingTime = bandEntry;
         break;
       }
+    } else {
+      bandEntry = null;
     }
   }
-  if (settlingTime < 0.5) settlingTime = simDuration;
 
   const lastFewSeconds = relevantHistory.filter(h => h.time > Math.max(0, simDuration - 3));
   const steadyStateError = lastFewSeconds.length > 0

@@ -10,14 +10,42 @@ import ScenarioPanel from './components/ScenarioPanel';
 import ScoreDisplay from './components/ScoreDisplay';
 import SimulationControls from './components/SimulationControls';
 
+// Fixed physics timestep. Decoupling integration from the render rate keeps the
+// simulation deterministic, so identical gains always yield identical scores
+// regardless of the device's frame rate.
+const FIXED_DT = 1 / 120;
+const MAX_FRAME = 0.25; // clamp huge frame gaps (e.g. backgrounded tab)
+const BESTS_KEY = 'pidTrainerBests';
+
+// Deterministic pseudo-random in [0, 1) from an integer bucket. Used so wind
+// gusts are repeatable from run to run instead of depending on Math.random().
+function hash01(n) {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
 function windForce(strength, time) {
-  const base = (
-    Math.sin(time * 1.73 + 1.2) * 0.35 +
-    Math.sin(time * 3.41 + 0.8) * 0.2 +
-    Math.sin(time * 0.7 + 3.1) * 0.15
+  // A steady directional component (the bias) is what the integral term must
+  // learn to cancel — this is what makes the "raise I to reject wind" lessons
+  // actually true. Lighter turbulence and rare gusts ride on top of it.
+  const bias = -0.18 * strength;
+  const turbulence = (
+    Math.sin(time * 1.73 + 1.2) * 0.16 +
+    Math.sin(time * 3.41 + 0.8) * 0.09 +
+    Math.sin(time * 0.7 + 3.1) * 0.07
   ) * strength;
-  const gust = Math.random() > 0.995 ? (Math.random() - 0.5) * strength * 2.5 : 0;
-  return base + gust;
+  // A gust holds for ~0.1s windows and is fully determined by the time bucket.
+  const bucket = Math.floor(time * 10);
+  const gust = hash01(bucket) > 0.99 ? (hash01(bucket + 0.5) - 0.5) * strength : 0;
+  return bias + turbulence + gust;
+}
+
+function loadBests() {
+  try {
+    return JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
+  } catch {
+    return {};
+  }
 }
 
 export default function App() {
@@ -29,40 +57,57 @@ export default function App() {
   const [metrics, setMetrics] = useState(null);
   const [hints, setHints] = useState([]);
   const [historySnapshot, setHistorySnapshot] = useState([]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [bestScores, setBestScores] = useState(loadBests);
 
   const simStateRef = useRef(createDroneState());
   const controllerRef = useRef(new PIDController(2, 0.1, 0.5));
   const historyRef = useRef([]);
-  const animRef = useRef(null);
   const pidRef = useRef(pidValues);
   const scenarioRef = useRef(SCENARIOS[scenarioId]);
-  const runningRef = useRef(false);
   const speedRef = useRef(1);
   const droneYRef = useRef(0);
   const thrustRef = useRef(0);
   const lastSnapshotTime = useRef(0);
+  const accumulatorRef = useRef(0);
 
   pidRef.current = pidValues;
   scenarioRef.current = SCENARIOS[scenarioId];
-  runningRef.current = running;
   speedRef.current = speed;
 
   const scenario = SCENARIOS[scenarioId];
+  const best = bestScores[scenarioId];
 
-  const reset = useCallback(() => {
-    if (animRef.current) cancelAnimationFrame(animRef.current);
+  const recordBest = useCallback((id, m) => {
+    if (!m || !m.total) return;
+    setBestScores(prev => {
+      const prior = prev[id];
+      if (prior && prior.total >= m.total) return prev;
+      const next = { ...prev, [id]: { total: m.total, stars: m.stars } };
+      try { localStorage.setItem(BESTS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Reset the mutable simulation refs to a fresh run with the current gains.
+  const resetSimRefs = useCallback(() => {
     simStateRef.current = createDroneState();
     controllerRef.current = new PIDController(pidRef.current.p, pidRef.current.i, pidRef.current.d);
     historyRef.current = [];
     droneYRef.current = 0;
     thrustRef.current = 0;
     lastSnapshotTime.current = 0;
+    accumulatorRef.current = 0;
+  }, []);
+
+  const reset = useCallback(() => {
+    resetSimRefs();
     setMetrics(null);
     setHints([]);
     setCompleted(false);
     setRunning(false);
     setHistorySnapshot([]);
-  }, []);
+  }, [resetSimRefs]);
 
   useEffect(() => {
     setPidValues({
@@ -75,14 +120,7 @@ export default function App() {
 
   const toggleRunning = useCallback(() => {
     if (completed) {
-      simStateRef.current = createDroneState();
-      controllerRef.current = new PIDController(
-        pidRef.current.p, pidRef.current.i, pidRef.current.d
-      );
-      historyRef.current = [];
-      droneYRef.current = 0;
-      thrustRef.current = 0;
-      lastSnapshotTime.current = 0;
+      resetSimRefs();
       setMetrics(null);
       setHints([]);
       setCompleted(false);
@@ -91,7 +129,23 @@ export default function App() {
     } else {
       setRunning(r => !r);
     }
-  }, [completed]);
+  }, [completed, resetSimRefs]);
+
+  // Keyboard shortcuts: Space = play/pause, R = reset. Ignored while typing.
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleRunning();
+      } else if (e.key === 'r' || e.key === 'R') {
+        reset();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleRunning, reset]);
 
   useEffect(() => {
     if (!running) return;
@@ -99,72 +153,74 @@ export default function App() {
     let rafId;
     let lastTick = performance.now();
 
+    const finish = () => {
+      setRunning(false);
+      setCompleted(true);
+      const scen = scenarioRef.current;
+      const m = computeMetrics(historyRef.current, scen.targetAltitude, scen.duration);
+      setMetrics(m);
+      setHistorySnapshot([...historyRef.current]);
+      setHints([]);
+      recordBest(scen.id, m);
+    };
+
     const tick = (now) => {
-      const deltaMs = now - lastTick;
+      let frameSec = (now - lastTick) / 1000;
       lastTick = now;
+      if (frameSec > MAX_FRAME) frameSec = MAX_FRAME;
 
-      if (deltaMs > 300) {
-        rafId = requestAnimationFrame(tick);
-        return;
-      }
+      accumulatorRef.current = Math.min(accumulatorRef.current + frameSec * speedRef.current, MAX_FRAME);
 
-      const dt = Math.min((deltaMs / 1000) * speedRef.current, 0.05);
       const sim = simStateRef.current;
       const controller = controllerRef.current;
       const scen = scenarioRef.current;
 
-      if (sim.time >= scen.duration) {
-        setRunning(false);
-        setCompleted(true);
-        const m = computeMetrics(historyRef.current, scen.targetAltitude, scen.duration);
-        setMetrics(m);
-        setHistorySnapshot([...historyRef.current]);
-        setHints([]);
-        return;
+      controller.setGains(pidRef.current.p, pidRef.current.i, pidRef.current.d);
+
+      while (accumulatorRef.current >= FIXED_DT) {
+        if (sim.time >= scen.duration) {
+          finish();
+          return;
+        }
+        const wind = scen.windEnabled ? windForce(scen.windStrength, sim.time) : 0;
+        const pidOutput = controller.update(scen.targetAltitude, sim.position, FIXED_DT);
+        const result = stepPhysics(sim, pidOutput, wind, FIXED_DT);
+
+        droneYRef.current = sim.position;
+        thrustRef.current = result.thrustPercent;
+
+        historyRef.current.push({
+          time: sim.time,
+          position: sim.position,
+          target: scen.targetAltitude,
+          error: scen.targetAltitude - sim.position,
+          pidOutput,
+          thrust: result.thrustPercent,
+          velocity: sim.velocity,
+        });
+
+        accumulatorRef.current -= FIXED_DT;
       }
 
-      const wind = scen.windEnabled ? windForce(scen.windStrength, sim.time) : 0;
-
-      controller.setGains(pidRef.current.p, pidRef.current.i, pidRef.current.d);
-      const pidOutput = controller.update(scen.targetAltitude, sim.position, dt);
-
-      const result = stepPhysics(sim, pidOutput, wind, dt);
-
-      droneYRef.current = sim.position;
-      thrustRef.current = result.thrustPercent;
-
-      historyRef.current.push({
-        time: sim.time,
-        position: sim.position,
-        target: scen.targetAltitude,
-        error: scen.targetAltitude - sim.position,
-        pidOutput,
-        thrust: result.thrustPercent,
-        velocity: sim.velocity,
-      });
-
+      // Throttle React state updates (graph + hints) to the wall clock so the
+      // physics rate doesn't flood the render path.
       if (now - lastSnapshotTime.current > 80) {
         lastSnapshotTime.current = now;
         setHistorySnapshot([...historyRef.current]);
-      }
-
-      if (historyRef.current.length % 45 === 0) {
-        const h = computeHints(
-          historyRef.current, scen.targetAltitude, pidRef.current, sim.time
-        );
-        setHints(h);
+        if (scen.liveHints !== false) {
+          setHints(computeHints(historyRef.current, scen.targetAltitude, pidRef.current, sim.time));
+        }
       }
 
       rafId = requestAnimationFrame(tick);
     };
 
-    lastTick = performance.now();
     rafId = requestAnimationFrame(tick);
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [running, reset]);
+  }, [running, recordBest]);
 
   return (
     <div className="app">
@@ -226,8 +282,16 @@ export default function App() {
             isRunning={running || completed}
             windStrength={scenario.windEnabled ? scenario.windStrength : 0}
           />
+          <button
+            className="panel-toggle"
+            onClick={() => setPanelOpen(o => !o)}
+            aria-label={panelOpen ? 'Hide controls' : 'Show controls'}
+            aria-expanded={panelOpen}
+          >
+            {panelOpen ? '✕' : '☰'}
+          </button>
         </div>
-        <div className="control-panel">
+        <div className={`control-panel ${panelOpen ? 'open' : ''}`}>
           <ScenarioPanel
             scenarioId={scenarioId}
             onSelect={setScenarioId}
@@ -254,7 +318,7 @@ export default function App() {
               ))}
             </div>
           )}
-          <ScoreDisplay metrics={metrics} />
+          <ScoreDisplay metrics={metrics} best={best} />
         </div>
       </main>
 
