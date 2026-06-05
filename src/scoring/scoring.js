@@ -85,6 +85,50 @@ export function computeMetrics(history, targetAltitude, simDuration) {
   };
 }
 
+// Lightweight step-response readout for the live HUD. Returns null until there
+// is enough data; individual fields are null until that milestone is reached.
+export function computeLiveMetrics(history, target) {
+  if (!history || history.length < 2 || target <= 0) return null;
+
+  // Rise time: first time the response reaches 90% of target.
+  let rise = null;
+  let peak = -Infinity;
+  for (let i = 0; i < history.length; i++) {
+    const h = history[i];
+    if (h.position > peak) peak = h.position;
+    if (rise === null && h.position >= 0.9 * target) rise = h.time;
+  }
+
+  const overshoot = Math.max(0, ((peak - target) / target) * 100);
+
+  // Settling time: first sustained (1.5s) entry into the ±5% band.
+  const band = target * 0.05;
+  let settle = null;
+  let entry = null;
+  for (let i = 0; i < history.length; i++) {
+    const h = history[i];
+    if (Math.abs(h.position - target) < band) {
+      if (entry === null) entry = h.time;
+      if (h.time - entry >= 1.5) { settle = entry; break; }
+    } else {
+      entry = null;
+    }
+  }
+
+  // Steady-state error: average |error| over the most recent second.
+  const now = history[history.length - 1].time;
+  let sum = 0;
+  let count = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].time < now - 1) break;
+    sum += Math.abs(history[i].error);
+    count++;
+  }
+  const sserr = count > 0 ? sum / count : Math.abs(history[history.length - 1].error);
+
+  return { rise, overshoot, settle, sserr };
+}
+
 export function computeHints(history, targetAltitude, pidValues, elapsed) {
   if (!history || history.length < 30) return [];
 

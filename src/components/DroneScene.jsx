@@ -186,6 +186,7 @@ export default function DroneScene({
   yRef,
   targetAltitude,
   thrustRef,
+  motorHeatRef,
   isRunning,
   windStrength,
 }) {
@@ -235,6 +236,7 @@ export default function DroneScene({
           yRef={yRef}
           targetYRef={targetYRef}
           thrustRef={thrustRef}
+          motorHeatRef={motorHeatRef}
           isRunning={isRunning}
         />
 

@@ -2,13 +2,25 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import SCENARIOS from './scenarios/scenarios';
 import PIDController from './physics/PIDController';
 import { createDroneState, stepPhysics } from './physics/DronePhysics';
-import { computeMetrics, computeHints } from './scoring/scoring';
+import { computeMetrics, computeHints, computeLiveMetrics } from './scoring/scoring';
 import DroneScene from './components/DroneScene';
 import PIDControls from './components/PIDControls';
+import PhysicsControls, { PHYSICS_DEFAULTS } from './components/PhysicsControls';
 import ErrorGraph from './components/ErrorGraph';
 import ScenarioPanel from './components/ScenarioPanel';
 import ScoreDisplay from './components/ScoreDisplay';
 import SimulationControls from './components/SimulationControls';
+import MetricsHUD from './components/MetricsHUD';
+import MotorHeat from './components/MotorHeat';
+
+// Deterministic high-frequency sensor noise (scaled by the NOISE physics param).
+function sensorNoise(time) {
+  return (
+    Math.sin(time * 41.3) +
+    0.7 * Math.sin(time * 67.1 + 1.0) +
+    0.5 * Math.sin(time * 113.9 + 2.0)
+  );
+}
 
 // Fixed physics timestep. Decoupling integration from the render rate keeps the
 // simulation deterministic, so identical gains always yield identical scores
@@ -79,6 +91,9 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [bestScores, setBestScores] = useState(loadBests);
   const [layout, setLayout] = useState(loadLayout);
+  const [physics, setPhysics] = useState({ ...PHYSICS_DEFAULTS });
+  const [liveMetrics, setLiveMetrics] = useState(null);
+  const [motorHeat, setMotorHeat] = useState([0, 0, 0, 0]);
 
   const simStateRef = useRef(createDroneState());
   const controllerRef = useRef(new PIDController(2, 0.1, 0.5));
@@ -92,6 +107,9 @@ export default function App() {
   const accumulatorRef = useRef(0);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const physicsRef = useRef(physics);
+  physicsRef.current = physics;
+  const motorHeatRef = useRef([0, 0, 0, 0]);
 
   pidRef.current = pidValues;
   scenarioRef.current = SCENARIOS[scenarioId];
@@ -120,6 +138,7 @@ export default function App() {
     thrustRef.current = 0;
     lastSnapshotTime.current = 0;
     accumulatorRef.current = 0;
+    motorHeatRef.current = [0, 0, 0, 0];
   }, []);
 
   const reset = useCallback(() => {
@@ -129,6 +148,8 @@ export default function App() {
     setCompleted(false);
     setRunning(false);
     setHistorySnapshot([]);
+    setLiveMetrics(null);
+    setMotorHeat([0, 0, 0, 0]);
   }, [resetSimRefs]);
 
   useEffect(() => {
@@ -147,6 +168,8 @@ export default function App() {
       setHints([]);
       setCompleted(false);
       setHistorySnapshot([]);
+      setLiveMetrics(null);
+      setMotorHeat([0, 0, 0, 0]);
       setRunning(true);
     } else {
       setRunning(r => !r);
@@ -250,12 +273,18 @@ export default function App() {
           finish();
           return;
         }
+        const phys = physicsRef.current;
         const wind = scen.windEnabled ? windForce(scen.windStrength, sim.time) : 0;
-        const pidOutput = controller.update(scen.targetAltitude, sim.position, FIXED_DT);
-        const result = stepPhysics(sim, pidOutput, wind, FIXED_DT);
+        // The controller only ever sees the (optionally noisy) measured altitude.
+        const measurement = phys.noise > 0
+          ? sim.position + phys.noise * 0.05 * sensorNoise(sim.time)
+          : sim.position;
+        const pidOutput = controller.update(scen.targetAltitude, measurement, FIXED_DT);
+        const result = stepPhysics(sim, pidOutput, wind, FIXED_DT, phys);
 
         droneYRef.current = sim.position;
         thrustRef.current = result.thrustPercent;
+        motorHeatRef.current = result.motorHeat;
 
         historyRef.current.push({
           time: sim.time,
@@ -270,11 +299,13 @@ export default function App() {
         accumulatorRef.current -= FIXED_DT;
       }
 
-      // Throttle React state updates (graph + hints) to the wall clock so the
-      // physics rate doesn't flood the render path.
+      // Throttle React state updates (graph, hints, HUD) to the wall clock so
+      // the physics rate doesn't flood the render path.
       if (now - lastSnapshotTime.current > 80) {
         lastSnapshotTime.current = now;
         setHistorySnapshot([...historyRef.current]);
+        setLiveMetrics(computeLiveMetrics(historyRef.current, scen.targetAltitude));
+        setMotorHeat([...motorHeatRef.current]);
         if (scen.liveHints !== false) {
           setHints(computeHints(historyRef.current, scen.targetAltitude, pidRef.current, sim.time));
         }
@@ -353,9 +384,20 @@ export default function App() {
             yRef={droneYRef}
             targetAltitude={scenario.targetAltitude}
             thrustRef={thrustRef}
+            motorHeatRef={motorHeatRef}
             isRunning={running || completed}
             windStrength={scenario.windEnabled ? scenario.windStrength : 0}
           />
+          <MetricsHUD metrics={liveMetrics} target={scenario.targetAltitude} />
+          <MotorHeat heat={motorHeat} />
+          {hints.length > 0 && running && (
+            <div className="flight-analysis">
+              <div className="hints-title">Live Flight Analysis</div>
+              {hints.map((h, i) => (
+                <div key={i} className="hint-line">{h}</div>
+              ))}
+            </div>
+          )}
           <button
             className="panel-toggle"
             onClick={() => setPanelOpen(o => !o)}
@@ -374,7 +416,10 @@ export default function App() {
           <PIDControls
             values={pidValues}
             onChange={setPidValues}
-            disabled={running}
+          />
+          <PhysicsControls
+            values={physics}
+            onChange={setPhysics}
           />
           <SimulationControls
             running={running}
@@ -384,14 +429,6 @@ export default function App() {
             onReset={reset}
             onSpeedChange={setSpeed}
           />
-          {hints.length > 0 && running && (
-            <div className="hints-panel">
-              <div className="hints-title">Live Flight Analysis</div>
-              {hints.map((h, i) => (
-                <div key={i} className="hint-line">{h}</div>
-              ))}
-            </div>
-          )}
           <ScoreDisplay metrics={metrics} best={best} />
         </div>
         <div

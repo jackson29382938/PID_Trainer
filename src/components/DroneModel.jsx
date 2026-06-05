@@ -42,11 +42,22 @@ function Propeller({ position, spinSpeed }) {
   );
 }
 
-function Arm({ angle, spinSpeed }) {
+function Arm({ angle, spinSpeed, motorIndex, motorHeatRef }) {
   const tipX = Math.cos(angle) * ARM_LENGTH;
   const tipZ = Math.sin(angle) * ARM_LENGTH;
   const midX = tipX / 2;
   const midZ = tipZ / 2;
+
+  const hubMatRef = useRef(null);
+
+  useFrame(() => {
+    if (!hubMatRef.current || !motorHeatRef) return;
+    const heat = motorHeatRef.current ? motorHeatRef.current[motorIndex] || 0 : 0;
+    const t = Math.min(1, heat / 1.2);
+    // Cool → hot: ramps from a dim ember to a bright red-orange glow.
+    hubMatRef.current.emissive.setRGB(t, t * 0.22, 0);
+    hubMatRef.current.emissiveIntensity = t * 1.4;
+  });
 
   return (
     <group>
@@ -57,7 +68,13 @@ function Arm({ angle, spinSpeed }) {
 
       <mesh position={[tipX, -0.04, tipZ]}>
         <cylinderGeometry args={[0.06, 0.07, 0.08, 8]} />
-        <meshStandardMaterial color="#222244" metalness={0.5} roughness={0.4} />
+        <meshStandardMaterial
+          ref={hubMatRef}
+          color="#222244"
+          emissive="#000000"
+          metalness={0.5}
+          roughness={0.4}
+        />
       </mesh>
 
       <Propeller position={[tipX, 0.06, tipZ]} spinSpeed={spinSpeed} />
@@ -92,7 +109,7 @@ function BatteryIndicator({ thrustRef }) {
   );
 }
 
-export default function DroneModel({ yRef, targetYRef, thrustRef, isRunning }) {
+export default function DroneModel({ yRef, targetYRef, thrustRef, motorHeatRef, isRunning }) {
   const groupRef = useRef(null);
   const bodyRef = useRef(null);
   const spinSpeedRef = useRef(0);
@@ -142,7 +159,7 @@ export default function DroneModel({ yRef, targetYRef, thrustRef, isRunning }) {
       </mesh>
 
       {ARM_ANGLES.map((angle, i) => (
-        <Arm key={i} angle={angle} spinSpeed={spinSpeed} />
+        <Arm key={i} angle={angle} spinSpeed={spinSpeed} motorIndex={i} motorHeatRef={motorHeatRef} />
       ))}
 
       <BatteryIndicator thrustRef={thrustRef} />
