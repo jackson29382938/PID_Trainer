@@ -1,57 +1,58 @@
-export function computeMetrics(history, targetAltitude, simDuration) {
-  if (!history || history.length < 10) {
-    return {
-      overshootPct: 0,
-      settlingTime: simDuration,
-      steadyStateError: Infinity,
-      itae: Infinity,
-      total: 0,
-      stars: 0,
-      analysis: [],
-    };
+export function initMetricsState(targetAltitude, simDuration) {
+  return {
+    target: targetAltitude,
+    simDuration: simDuration,
+    startIdxTime: simDuration * 0.1,
+    peak: -Infinity,
+    settlingTime: simDuration,
+    bandEntry: null,
+    settleBand: targetAltitude * 0.05,
+    SETTLE_DWELL: 1.5,
+    sseSum: 0,
+    sseCount: 0,
+    itaeSum: 0,
+    relevantCount: 0,
+  };
+}
+
+export function updateMetricsState(state, h) {
+  if (h.time < state.startIdxTime) return;
+
+  const absError = Math.abs(h.error);
+  if (h.position > state.peak) state.peak = h.position;
+
+  if (absError < state.settleBand) {
+    if (state.bandEntry === null) state.bandEntry = h.time;
+    if (state.settlingTime === state.simDuration && h.time - state.bandEntry >= state.SETTLE_DWELL) {
+      state.settlingTime = state.bandEntry;
+    }
+  } else {
+    state.bandEntry = null;
   }
 
-  const target = targetAltitude;
-  const startIdx = Math.floor(history.length * 0.1);
-  const relevantHistory = history.slice(startIdx);
+  if (h.time > state.simDuration - 3) {
+    state.sseSum += absError;
+    state.sseCount++;
+  }
 
-  const peak = Math.max(...relevantHistory.map(h => h.position));
+  state.itaeSum += h.time * absError;
+  state.relevantCount++;
+}
+
+export function finalizeMetricsState(state) {
+  const { target, peak, settlingTime, sseSum, sseCount, itaeSum, relevantCount } = state;
+
   const overshootPct = target > 0
     ? Math.max(0, ((peak - target) / target) * 100)
     : 0;
 
-  // Settling time = the first moment the response enters the ±5% band and then
-  // holds it for a sustained dwell. A dwell test (rather than "in band until the
-  // very end") is robust to isolated wind gusts in disturbance scenarios, while
-  // still penalising genuine oscillation — which never holds the band that long.
-  const settleBand = target * 0.05;
-  const SETTLE_DWELL = 1.5;
-  let settlingTime = simDuration;
-  let bandEntry = null;
-  for (let i = 0; i < relevantHistory.length; i++) {
-    const h = relevantHistory[i];
-    if (Math.abs(h.position - target) < settleBand) {
-      if (bandEntry === null) bandEntry = h.time;
-      if (h.time - bandEntry >= SETTLE_DWELL) {
-        settlingTime = bandEntry;
-        break;
-      }
-    } else {
-      bandEntry = null;
-    }
-  }
-
-  const lastFewSeconds = relevantHistory.filter(h => h.time > Math.max(0, simDuration - 3));
-  const steadyStateError = lastFewSeconds.length > 0
-    ? lastFewSeconds.reduce((sum, h) => sum + Math.abs(h.error), 0) / lastFewSeconds.length
+  const steadyStateError = sseCount > 0
+    ? sseSum / sseCount
     : Infinity;
 
-  let itae = 0;
-  for (let i = 0; i < relevantHistory.length; i++) {
-    const h = relevantHistory[i];
-    itae += h.time * Math.abs(h.error);
-  }
-  itae = (itae / relevantHistory.length) * 0.01;
+  const itae = relevantCount > 0
+    ? (itaeSum / relevantCount) * 0.01
+    : Infinity;
 
   const osScore = overshootPct < 5 ? 100 : overshootPct < 15 ? 80 : overshootPct < 30 ? 50 : overshootPct < 50 ? 20 : 0;
   const stScore = settlingTime < 3 ? 100 : settlingTime < 5 ? 80 : settlingTime < 8 ? 50 : settlingTime < 12 ? 20 : 0;
@@ -59,7 +60,6 @@ export function computeMetrics(history, targetAltitude, simDuration) {
   const itaeScore = itae < 2 ? 100 : itae < 5 ? 80 : itae < 10 ? 50 : itae < 20 ? 20 : 0;
 
   const total = Math.round(osScore * 0.25 + stScore * 0.25 + sseScore * 0.25 + itaeScore * 0.25);
-
   const stars = total >= 90 ? 3 : total >= 70 ? 2 : total >= 40 ? 1 : 0;
 
   const analysis = [];
@@ -83,6 +83,26 @@ export function computeMetrics(history, targetAltitude, simDuration) {
     stars,
     analysis,
   };
+}
+
+export function computeMetrics(history, targetAltitude, simDuration) {
+  if (!history || history.length < 10) {
+    return {
+      overshootPct: 0,
+      settlingTime: simDuration,
+      steadyStateError: Infinity,
+      itae: Infinity,
+      total: 0,
+      stars: 0,
+      analysis: [],
+    };
+  }
+
+  const state = initMetricsState(targetAltitude, simDuration);
+  for (let i = 0; i < history.length; i++) {
+    updateMetricsState(state, history[i]);
+  }
+  return finalizeMetricsState(state);
 }
 
 // Lightweight step-response readout for the live HUD. Returns null until there
