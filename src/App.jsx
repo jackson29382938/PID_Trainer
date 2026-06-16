@@ -2,7 +2,14 @@ import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 
 import SCENARIOS from './scenarios/scenarios';
 import PIDController from './physics/PIDController';
 import { createDroneState, stepPhysics } from './physics/DronePhysics';
-import { computeMetrics, computeHints, computeLiveMetrics } from './scoring/scoring';
+import {
+  computeMetrics,
+  computeHints,
+  computeLiveMetrics,
+  initMetricsState,
+  updateMetricsState,
+  finalizeMetricsState,
+} from './scoring/scoring';
 // The 3D scene pulls in three.js / r3f; load it lazily so the app shell paints
 // first and the heavy libraries download in their own chunk.
 const DroneScene = lazy(() => import('./components/DroneScene'));
@@ -26,11 +33,13 @@ function sensorNoise(time) {
 }
 
 // Headless run of a full scenario with given gains/physics, returning its score.
-// Shared by the auto-tuner.
+// Shared by the auto-tuner. Optimized with incremental metrics to avoid
+// allocating ~1.8k history objects per call.
 function simulateScore(scenario, physics, gains) {
   const sim = createDroneState();
   const c = new PIDController(gains.p, gains.i, gains.d);
-  const hist = [];
+  const metrics = initMetricsState(scenario.targetAltitude, scenario.duration);
+
   while (sim.time < scenario.duration) {
     const wind = scenario.windEnabled ? windForce(scenario.windStrength, sim.time) : 0;
     const meas = physics.noise > 0
@@ -38,13 +47,10 @@ function simulateScore(scenario, physics, gains) {
       : sim.position;
     const out = c.update(scenario.targetAltitude, meas, FIXED_DT);
     stepPhysics(sim, out, wind, FIXED_DT, physics);
-    hist.push({
-      time: sim.time,
-      position: sim.position,
-      error: scenario.targetAltitude - sim.position,
-    });
+
+    updateMetricsState(metrics, sim.time, sim.position, scenario.targetAltitude - sim.position);
   }
-  return computeMetrics(hist, scenario.targetAltitude, scenario.duration).total;
+  return finalizeMetricsState(metrics).total;
 }
 
 // Coarse grid search followed by a local refine. Cheap enough (~550 short sims)

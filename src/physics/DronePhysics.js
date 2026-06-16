@@ -15,6 +15,9 @@ export const PHYSICS = {
 // the 3D props line up).
 export const MOTOR_ANGLES = [45, 135, 225, 315].map(d => (d * Math.PI) / 180);
 
+// Precompute cosines for the hot physics loop (used in weight distribution).
+const MOTOR_COSINES = MOTOR_ANGLES.map(Math.cos);
+
 const NOMINAL_PER_MOTOR = PHYSICS.maxThrust / 4;
 const HEAT_GAIN = 0.45;
 const HEAT_COOLING = 0.4;
@@ -71,10 +74,10 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
 
   // Distribute total thrust across the four motors. A CG offset loads the
   // motors on one side more heavily than the others.
-  const w0 = Math.max(0.05, 1 + cg * Math.cos(MOTOR_ANGLES[0]));
-  const w1 = Math.max(0.05, 1 + cg * Math.cos(MOTOR_ANGLES[1]));
-  const w2 = Math.max(0.05, 1 + cg * Math.cos(MOTOR_ANGLES[2]));
-  const w3 = Math.max(0.05, 1 + cg * Math.cos(MOTOR_ANGLES[3]));
+  const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
+  const w1 = Math.max(0.05, 1 + cg * MOTOR_COSINES[1]);
+  const w2 = Math.max(0.05, 1 + cg * MOTOR_COSINES[2]);
+  const w3 = Math.max(0.05, 1 + cg * MOTOR_COSINES[3]);
   const wsum = w0 + w1 + w2 + w3;
   const weights = [w0, w1, w2, w3];
 

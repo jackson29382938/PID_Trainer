@@ -85,6 +85,75 @@ export function computeMetrics(history, targetAltitude, simDuration) {
   };
 }
 
+/**
+ * Incremental metrics calculation to avoid allocating large history arrays.
+ * Used by the auto-tuner to run hundreds of sims without GC pressure.
+ */
+export function initMetricsState(targetAltitude, simDuration) {
+  return {
+    target: targetAltitude,
+    duration: simDuration,
+    startTime: simDuration * 0.1,
+    peak: -Infinity,
+    settleBand: targetAltitude * 0.05,
+    SETTLE_DWELL: 1.5,
+    settlingTime: simDuration,
+    bandEntry: null,
+    sseSum: 0,
+    sseCount: 0,
+    itae: 0,
+    relevantCount: 0,
+  };
+}
+
+export function updateMetricsState(state, time, position, error) {
+  if (time < state.startTime) return;
+
+  state.relevantCount++;
+
+  if (position > state.peak) state.peak = position;
+
+  if (Math.abs(position - state.target) < state.settleBand) {
+    if (state.bandEntry === null) state.bandEntry = time;
+    if (state.settlingTime === state.duration && (time - state.bandEntry >= state.SETTLE_DWELL)) {
+      state.settlingTime = state.bandEntry;
+    }
+  } else {
+    state.bandEntry = null;
+  }
+
+  if (time > state.duration - 3) {
+    state.sseSum += Math.abs(error);
+    state.sseCount++;
+  }
+
+  state.itae += time * Math.abs(error);
+}
+
+export function finalizeMetricsState(state) {
+  if (state.relevantCount < 10) return { total: 0, stars: 0 };
+
+  const overshootPct = state.target > 0
+    ? Math.max(0, ((state.peak - state.target) / state.target) * 100)
+    : 0;
+
+  const steadyStateError = state.sseCount > 0
+    ? state.sseSum / state.sseCount
+    : Infinity;
+
+  const itae = (state.itae / state.relevantCount) * 0.01;
+
+  const osScore = overshootPct < 5 ? 100 : overshootPct < 15 ? 80 : overshootPct < 30 ? 50 : overshootPct < 50 ? 20 : 0;
+  const stScore = state.settlingTime < 3 ? 100 : state.settlingTime < 5 ? 80 : state.settlingTime < 8 ? 50 : state.settlingTime < 12 ? 20 : 0;
+  const sseScore = steadyStateError < 0.05 ? 100 : steadyStateError < 0.15 ? 80 : steadyStateError < 0.4 ? 50 : steadyStateError < 0.8 ? 20 : 0;
+  const itaeScore = itae < 2 ? 100 : itae < 5 ? 80 : itae < 10 ? 50 : itae < 20 ? 20 : 0;
+
+  const total = Math.round(osScore * 0.25 + stScore * 0.25 + sseScore * 0.25 + itaeScore * 0.25);
+  const stars = total >= 90 ? 3 : total >= 70 ? 2 : total >= 40 ? 1 : 0;
+
+  return { total, stars };
+}
+
 // Lightweight step-response readout for the live HUD. Returns null until there
 // is enough data; individual fields are null until that milestone is reached.
 export function computeLiveMetrics(history, target) {
