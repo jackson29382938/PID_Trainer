@@ -144,7 +144,17 @@ export default function ErrorGraph({ history, targetAltitude, ghost }) {
 
       if (!history || history.length < 2) return;
 
-      const visible = history.filter(h => h.time >= windowStart);
+      // Find the start index of the visible window using a binary search or linear search.
+      // Since history is chronological and we only need the last few seconds,
+      // a reverse linear search is very efficient.
+      let startIdx = 0;
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].time < windowStart) {
+          startIdx = i + 1;
+          break;
+        }
+      }
+      const visible = history.slice(startIdx);
       if (visible.length < 2) return;
 
       // Clip plotted data to the chart area so large overshoots don't bleed
