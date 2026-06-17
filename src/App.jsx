@@ -131,7 +131,9 @@ function windForce(strength, time) {
 
 function loadBests() {
   try {
-    return JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
+    const stored = JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
+    // Ensure we return a plain object to avoid crashes when accessing properties.
+    return (stored && typeof stored === 'object' && !Array.isArray(stored)) ? stored : {};
   } catch {
     return {};
   }
@@ -150,7 +152,19 @@ const maxGraphHeight = () => Math.max(140, window.innerHeight - 220);
 
 function loadLayout() {
   try {
-    return { ...LAYOUT_DEFAULTS, ...JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') };
+    const stored = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
+    const layout = { ...LAYOUT_DEFAULTS };
+    // Validate and sanitize layout values from localStorage to prevent CSS injection
+    // or UI breakage from malicious/corrupted data.
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+      if (typeof stored.panelWidth === 'number') {
+        layout.panelWidth = clamp(stored.panelWidth, minPanelWidth(), maxPanelWidth());
+      }
+      if (typeof stored.graphHeight === 'number') {
+        layout.graphHeight = clamp(stored.graphHeight, minGraphHeight(), maxGraphHeight());
+      }
+    }
+    return layout;
   } catch {
     return { ...LAYOUT_DEFAULTS };
   }
