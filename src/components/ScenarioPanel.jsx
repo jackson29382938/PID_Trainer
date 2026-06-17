@@ -10,12 +10,13 @@ export default function ScenarioPanel({ scenarioId, onSelect, disabled, bestScor
   return (
     <div className="scenario-panel">
       <div className="scenario-header">
-        <span className="scenario-title">Scenario</span>
+        <label className="scenario-title" htmlFor="scenario-select">Scenario</label>
         <span className="scenario-progress" title="Total stars earned">
           ★ {totalStars}/{maxStars}
         </span>
       </div>
       <select
+        id="scenario-select"
         className="scenario-select"
         value={scenarioId}
         onChange={e => onSelect(parseInt(e.target.value))}
