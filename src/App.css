@@ -192,8 +192,13 @@ body {
 }
 
 .resizer:hover::after,
-.resizer:active::after {
+.resizer:active::after,
+.resizer:focus-visible::after {
   background: var(--accent);
+}
+
+.resizer:focus-visible {
+  outline: none;
 }
 
 /* Vertical handle on the seam between the scene and the control panel. */

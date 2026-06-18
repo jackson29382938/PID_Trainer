@@ -331,11 +331,31 @@ export default function App() {
         toggleRunning();
       } else if (e.key === 'r' || e.key === 'R') {
         reset();
+      } else if (e.key === 'd' || e.key === 'D') {
+        handleDisturb();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleRunning, reset]);
+  }, [toggleRunning, reset, handleDisturb]);
+
+  const handleResizeKeyDown = useCallback((axis) => (e) => {
+    const step = 10;
+    if (axis === 'width') {
+      if (e.key === 'ArrowLeft') {
+        setLayout(prev => ({ ...prev, panelWidth: clamp(prev.panelWidth + step, minPanelWidth(), maxPanelWidth()) }));
+      } else if (e.key === 'ArrowRight') {
+        setLayout(prev => ({ ...prev, panelWidth: clamp(prev.panelWidth - step, minPanelWidth(), maxPanelWidth()) }));
+      }
+    } else {
+      if (e.key === 'ArrowUp') {
+        setLayout(prev => ({ ...prev, graphHeight: clamp(prev.graphHeight + step, minGraphHeight(), maxGraphHeight()) }));
+      } else if (e.key === 'ArrowDown') {
+        setLayout(prev => ({ ...prev, graphHeight: clamp(prev.graphHeight - step, minGraphHeight(), maxGraphHeight()) }));
+      }
+    }
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layoutRef.current)); } catch { /* ignore */ }
+  }, []);
 
   // Drag-to-resize the panels. 'width' adjusts the control panel, 'height' the
   // graph panel; the scene fills whatever is left.
@@ -609,10 +629,15 @@ export default function App() {
           className="resizer resizer-v"
           onPointerDown={startResize('width')}
           onDoubleClick={resetResize('width')}
+          onKeyDown={handleResizeKeyDown('width')}
+          tabIndex={0}
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize control panel"
-          title="Drag to resize · double-click to reset"
+          aria-valuenow={layout.panelWidth}
+          aria-valuemin={minPanelWidth()}
+          aria-valuemax={maxPanelWidth()}
+          title="Drag or use arrow keys to resize · double-click to reset"
         />
       </main>
 
@@ -620,10 +645,15 @@ export default function App() {
         className="resizer resizer-h"
         onPointerDown={startResize('height')}
         onDoubleClick={resetResize('height')}
+        onKeyDown={handleResizeKeyDown('height')}
+        tabIndex={0}
         role="separator"
         aria-orientation="horizontal"
         aria-label="Resize graph panel"
-        title="Drag to resize · double-click to reset"
+        aria-valuenow={layout.graphHeight}
+        aria-valuemin={minGraphHeight()}
+        aria-valuemax={maxGraphHeight()}
+        title="Drag or use arrow keys to resize · double-click to reset"
       />
       <div className="graph-panel">
         <div className="graph-header">
