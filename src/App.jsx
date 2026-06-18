@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 
 import SCENARIOS from './scenarios/scenarios';
 import PIDController from './physics/PIDController';
 import { createDroneState, stepPhysics } from './physics/DronePhysics';
-import { computeMetrics, computeHints, computeLiveMetrics } from './scoring/scoring';
+import { computeMetrics, computeHints, computeLiveMetrics, initMetricsState, updateMetricsState, finalizeMetricsState } from './scoring/scoring';
 // The 3D scene pulls in three.js / r3f; load it lazily so the app shell paints
 // first and the heavy libraries download in their own chunk.
 const DroneScene = lazy(() => import('./components/DroneScene'));
@@ -26,25 +26,31 @@ function sensorNoise(time) {
 }
 
 // Headless run of a full scenario with given gains/physics, returning its score.
-// Shared by the auto-tuner.
+// Optimized to compute metrics incrementally without allocating a large history
+// array, significantly speeding up the auto-tuner's search.
 function simulateScore(scenario, physics, gains) {
+  const { duration, targetAltitude, windEnabled, windStrength } = scenario;
+  const { noise } = physics;
+
   const sim = createDroneState();
   const c = new PIDController(gains.p, gains.i, gains.d);
-  const hist = [];
-  while (sim.time < scenario.duration) {
-    const wind = scenario.windEnabled ? windForce(scenario.windStrength, sim.time) : 0;
-    const meas = physics.noise > 0
-      ? sim.position + physics.noise * 0.05 * sensorNoise(sim.time)
+  const metricsState = initMetricsState(targetAltitude, duration);
+
+  while (sim.time < duration) {
+    const wind = windEnabled ? windForce(windStrength, sim.time) : 0;
+    const meas = noise > 0
+      ? sim.position + noise * 0.05 * sensorNoise(sim.time)
       : sim.position;
-    const out = c.update(scenario.targetAltitude, meas, FIXED_DT);
+    const out = c.update(targetAltitude, meas, FIXED_DT);
     stepPhysics(sim, out, wind, FIXED_DT, physics);
-    hist.push({
+
+    updateMetricsState(metricsState, {
       time: sim.time,
       position: sim.position,
-      error: scenario.targetAltitude - sim.position,
+      error: targetAltitude - sim.position,
     });
   }
-  return computeMetrics(hist, scenario.targetAltitude, scenario.duration).total;
+  return finalizeMetricsState(metricsState).total;
 }
 
 // Coarse grid search followed by a local refine. Cheap enough (~550 short sims)
