@@ -129,16 +129,6 @@ function windForce(strength, time) {
   return bias + turbulence + gust;
 }
 
-function loadBests() {
-  try {
-    return JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-const LAYOUT_KEY = 'pidTrainerLayout';
-const LAYOUT_DEFAULTS = { panelWidth: 360, graphHeight: 220 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Bounds keep each panel usable: the scene always keeps room and panels never
@@ -148,9 +138,53 @@ const maxPanelWidth = () => Math.max(260, window.innerWidth - 320);
 const minGraphHeight = () => 120;
 const maxGraphHeight = () => Math.max(140, window.innerHeight - 220);
 
+/**
+ * Loads and validates best scores from localStorage.
+ * Defense-in-depth: prevents malformed data from causing issues like DoS.
+ */
+function loadBests() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
+    if (!raw || typeof raw !== 'object') return {};
+    const validated = {};
+    Object.keys(raw).forEach(id => {
+      const entry = raw[id];
+      if (entry && typeof entry === 'object') {
+        const total = typeof entry.total === 'number' ? entry.total : 0;
+        const stars = typeof entry.stars === 'number' ? Math.floor(entry.stars) : 0;
+        validated[id] = {
+          ...entry,
+          total: clamp(total, 0, 100),
+          stars: clamp(stars, 0, 3)
+        };
+      }
+    });
+    return validated;
+  } catch {
+    return {};
+  }
+}
+
+const LAYOUT_KEY = 'pidTrainerLayout';
+const LAYOUT_DEFAULTS = { panelWidth: 360, graphHeight: 220 };
+
+/**
+ * Loads and validates layout from localStorage.
+ * Prevents potential CSS injection or DoS via malformed layout dimensions.
+ */
 function loadLayout() {
   try {
-    return { ...LAYOUT_DEFAULTS, ...JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') };
+    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
+    if (!raw || typeof raw !== 'object') return { ...LAYOUT_DEFAULTS };
+    return {
+      ...LAYOUT_DEFAULTS,
+      panelWidth: typeof raw.panelWidth === 'number'
+        ? clamp(raw.panelWidth, minPanelWidth(), maxPanelWidth())
+        : LAYOUT_DEFAULTS.panelWidth,
+      graphHeight: typeof raw.graphHeight === 'number'
+        ? clamp(raw.graphHeight, minGraphHeight(), maxGraphHeight())
+        : LAYOUT_DEFAULTS.graphHeight,
+    };
   } catch {
     return { ...LAYOUT_DEFAULTS };
   }
