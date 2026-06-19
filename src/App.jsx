@@ -151,15 +151,18 @@ const maxGraphHeight = () => Math.max(140, window.innerHeight - 220);
 function loadBests() {
   try {
     const raw = JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
-    if (!raw || typeof raw !== 'object') return {};
-    const validated = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    // Use a null-prototype object to prevent prototype pollution from untrusted keys.
+    const validated = Object.create(null);
     Object.keys(raw).forEach(id => {
+      // Validate that keys are numeric scenario IDs.
+      if (!/^\d+$/.test(id)) return;
       const entry = raw[id];
       if (entry && typeof entry === 'object') {
         const total = typeof entry.total === 'number' ? entry.total : 0;
         const stars = typeof entry.stars === 'number' ? Math.floor(entry.stars) : 0;
+        // Strictly pick only the properties we need; never spread untrusted data.
         validated[id] = {
-          ...entry,
           total: clamp(total, 0, 100),
           stars: clamp(stars, 0, 3)
         };
