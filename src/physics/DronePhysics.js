@@ -33,7 +33,7 @@ export function createDroneState() {
   };
 }
 
-export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
+export function stepPhysics(state, pidOutput, windForce, dt, params = {}, skipHeat = false) {
   const { gravity, maxThrust, groundRestitution } = PHYSICS;
   const mass = params.mass ?? PHYSICS.mass;
   const dragCoeff = params.drag ?? PHYSICS.dragCoeff;
@@ -69,6 +69,15 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
   if (state.position < 0) {
     state.position = 0;
     state.velocity = -state.velocity * groundRestitution;
+  }
+
+  if (skipHeat) {
+    return {
+      thrust,
+      thrustPercent: (thrust / maxThrust) * 100,
+      acceleration,
+      netForce,
+    };
   }
 
   // Distribute total thrust across the four motors. A CG offset loads the

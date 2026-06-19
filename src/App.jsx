@@ -28,27 +28,25 @@ function sensorNoise(time) {
 // Headless run of a full scenario with given gains/physics, returning its score.
 // Optimized to compute metrics incrementally without allocating a large history
 // array, significantly speeding up the auto-tuner's search.
-function simulateScore(scenario, physics, gains) {
-  const { duration, targetAltitude, windEnabled, windStrength } = scenario;
+function simulateScore(scenario, physics, gains, precomputed) {
+  const { duration, targetAltitude } = scenario;
   const { noise } = physics;
 
   const sim = createDroneState();
   const c = new PIDController(gains.p, gains.i, gains.d);
   const metricsState = initMetricsState(targetAltitude, duration);
 
+  let step = 0;
   while (sim.time < duration) {
-    const wind = windEnabled ? windForce(windStrength, sim.time) : 0;
+    const wind = precomputed.wind[step];
     const meas = noise > 0
-      ? sim.position + noise * 0.05 * sensorNoise(sim.time)
+      ? sim.position + noise * 0.05 * precomputed.noise[step]
       : sim.position;
     const out = c.update(targetAltitude, meas, FIXED_DT);
-    stepPhysics(sim, out, wind, FIXED_DT, physics);
+    stepPhysics(sim, out, wind, FIXED_DT, physics, true);
 
-    updateMetricsState(metricsState, {
-      time: sim.time,
-      position: sim.position,
-      error: targetAltitude - sim.position,
-    });
+    updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
+    step++;
   }
   return finalizeMetricsState(metricsState).total;
 }
@@ -60,9 +58,22 @@ function autoTune(scenario, physics) {
   let best = -1;
   let bestG = { p: 2, i: 0.1, d: 0.5 };
 
+  // Pre-calculate wind and noise for the entire duration to avoid expensive
+  // Math.sin and hash01 calls in the tight simulation loop.
+  const steps = Math.ceil(scenario.duration / FIXED_DT) + 1;
+  const precomputed = {
+    wind: new Float64Array(steps),
+    noise: new Float64Array(steps)
+  };
+  for (let i = 0; i < steps; i++) {
+    const t = i * FIXED_DT;
+    precomputed.wind[i] = scenario.windEnabled ? windForce(scenario.windStrength, t) : 0;
+    precomputed.noise[i] = sensorNoise(t);
+  }
+
   const search = (Ps, Is, Ds) => {
     for (const p of Ps) for (const i of Is) for (const d of Ds) {
-      const total = simulateScore(scenario, physics, { p, i, d });
+      const total = simulateScore(scenario, physics, { p, i, d }, precomputed);
       if (total > best) { best = total; bestG = { p, i, d }; }
     }
   };
