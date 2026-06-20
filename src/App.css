@@ -201,6 +201,17 @@ body {
   outline: none;
 }
 
+/* Global focus-visible styles for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Ensure the resizer focus styles aren't overridden in a way that breaks them */
+.resizer:focus-visible {
+  outline: none;
+}
+
 /* Vertical handle on the seam between the scene and the control panel. */
 .resizer-v {
   top: 0;

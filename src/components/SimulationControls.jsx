@@ -48,6 +48,8 @@ export default function SimulationControls({
                 key={s}
                 className={`sim-speed-btn ${speed === s ? 'active' : ''}`}
                 onClick={() => onSpeedChange(s)}
+                aria-pressed={speed === s}
+                title={s >= 1 ? \`Set speed to \${s}x (\${s})\` : \`Set speed to \${s}x\`}
               >
                 {s}x
               </button>

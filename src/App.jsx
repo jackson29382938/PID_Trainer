@@ -238,6 +238,10 @@ export default function App() {
   scenarioRef.current = SCENARIOS[scenarioId];
   speedRef.current = speed;
 
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
+
   const scenario = SCENARIOS[scenarioId];
   const best = bestScores[scenarioId];
 
@@ -333,6 +337,14 @@ export default function App() {
         reset();
       } else if (e.key === 'd' || e.key === 'D') {
         handleDisturb();
+      } else if (e.key === '1') {
+        setSpeed(1);
+      } else if (e.key === '2') {
+        setSpeed(2);
+      } else if (e.key === '3') {
+        setSpeed(3);
+      } else if (e.key === 'g' || e.key === 'G') {
+        setShowGhost(v => !v);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -666,7 +678,8 @@ export default function App() {
               <button
                 className={`graph-ghost-toggle ${showGhost ? 'active' : ''}`}
                 onClick={() => setShowGhost(v => !v)}
-                title="Toggle the previous run overlay"
+                title="Toggle the previous run overlay (G)"
+                aria-pressed={showGhost}
               >
                 <span className="legend-dot legend-dot-ghost" />
                 Previous{ghost.gains ? ` (${ghost.total})` : ''}
