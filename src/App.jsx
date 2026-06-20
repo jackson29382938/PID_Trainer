@@ -28,27 +28,26 @@ function sensorNoise(time) {
 // Headless run of a full scenario with given gains/physics, returning its score.
 // Optimized to compute metrics incrementally without allocating a large history
 // array, significantly speeding up the auto-tuner's search.
-function simulateScore(scenario, physics, gains) {
-  const { duration, targetAltitude, windEnabled, windStrength } = scenario;
+function simulateScore(scenario, physics, gains, controller, windArray, noiseArray) {
+  const { duration, targetAltitude } = scenario;
   const { noise } = physics;
 
   const sim = createDroneState();
-  const c = new PIDController(gains.p, gains.i, gains.d);
+  controller.reset();
+  controller.setGains(gains.p, gains.i, gains.d);
   const metricsState = initMetricsState(targetAltitude, duration);
 
+  let step = 0;
   while (sim.time < duration) {
-    const wind = windEnabled ? windForce(windStrength, sim.time) : 0;
+    const wind = windArray[step] || 0;
     const meas = noise > 0
-      ? sim.position + noise * 0.05 * sensorNoise(sim.time)
+      ? sim.position + noise * 0.05 * (noiseArray[step] || 0)
       : sim.position;
-    const out = c.update(targetAltitude, meas, FIXED_DT);
-    stepPhysics(sim, out, wind, FIXED_DT, physics);
+    const out = controller.update(targetAltitude, meas, FIXED_DT);
+    stepPhysics(sim, out, wind, FIXED_DT, { ...physics, skipHeat: true });
 
-    updateMetricsState(metricsState, {
-      time: sim.time,
-      position: sim.position,
-      error: targetAltitude - sim.position,
-    });
+    updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
+    step++;
   }
   return finalizeMetricsState(metricsState).total;
 }
@@ -56,13 +55,27 @@ function simulateScore(scenario, physics, gains) {
 // Coarse grid search followed by a local refine. Cheap enough (~550 short sims)
 // to run synchronously on a button press.
 function autoTune(scenario, physics) {
+  const { duration, windEnabled, windStrength } = scenario;
   const round = (v, step) => Math.round(v / step) * step;
+
+  // Pre-calculate wind and noise arrays to avoid repeated expensive calls to
+  // Math.sin and hash01 in the inner loop.
+  const windArray = [];
+  const noiseArray = [];
+  let t = 0;
+  while (t < duration) {
+    windArray.push(windEnabled ? windForce(windStrength, t) : 0);
+    noiseArray.push(sensorNoise(t));
+    t += FIXED_DT;
+  }
+
   let best = -1;
   let bestG = { p: 2, i: 0.1, d: 0.5 };
+  const controller = new PIDController(0, 0, 0);
 
   const search = (Ps, Is, Ds) => {
     for (const p of Ps) for (const i of Is) for (const d of Ds) {
-      const total = simulateScore(scenario, physics, { p, i, d });
+      const total = simulateScore(scenario, physics, { p, i, d }, controller, windArray, noiseArray);
       if (total > best) { best = total; bestG = { p, i, d }; }
     }
   };

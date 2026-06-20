@@ -71,6 +71,17 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
     state.velocity = -state.velocity * groundRestitution;
   }
 
+  if (params.skipHeat) {
+    return {
+      thrust,
+      thrustPercent: (thrust / maxThrust) * 100,
+      acceleration,
+      netForce,
+      motorThrust: [0, 0, 0, 0],
+      motorHeat: state.motorHeat,
+    };
+  }
+
   // Distribute total thrust across the four motors. A CG offset loads the
   // motors on one side more heavily than the others.
   const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
