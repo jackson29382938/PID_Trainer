@@ -44,11 +44,7 @@ function simulateScore(scenario, physics, gains) {
     const out = c.update(targetAltitude, meas, FIXED_DT);
     stepPhysics(sim, out, wind, FIXED_DT, physics);
 
-    updateMetricsState(metricsState, {
-      time: sim.time,
-      position: sim.position,
-      error: targetAltitude - sim.position,
-    });
+    updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
   }
   return finalizeMetricsState(metricsState).total;
 }

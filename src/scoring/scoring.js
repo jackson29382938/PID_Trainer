@@ -15,27 +15,27 @@ export function initMetricsState(targetAltitude, simDuration) {
   };
 }
 
-export function updateMetricsState(state, h) {
-  if (h.time < state.startIdxTime) return;
+export function updateMetricsState(state, time, position, error) {
+  if (time < state.startIdxTime) return;
 
-  const absError = Math.abs(h.error);
-  if (h.position > state.peak) state.peak = h.position;
+  const absError = Math.abs(error);
+  if (position > state.peak) state.peak = position;
 
   if (absError < state.settleBand) {
-    if (state.bandEntry === null) state.bandEntry = h.time;
-    if (state.settlingTime === state.simDuration && h.time - state.bandEntry >= state.SETTLE_DWELL) {
+    if (state.bandEntry === null) state.bandEntry = time;
+    if (state.settlingTime === state.simDuration && time - state.bandEntry >= state.SETTLE_DWELL) {
       state.settlingTime = state.bandEntry;
     }
   } else {
     state.bandEntry = null;
   }
 
-  if (h.time > state.simDuration - 3) {
+  if (time > state.simDuration - 3) {
     state.sseSum += absError;
     state.sseCount++;
   }
 
-  state.itaeSum += h.time * absError;
+  state.itaeSum += time * absError;
   state.relevantCount++;
 }
 
@@ -100,7 +100,8 @@ export function computeMetrics(history, targetAltitude, simDuration) {
 
   const state = initMetricsState(targetAltitude, simDuration);
   for (let i = 0; i < history.length; i++) {
-    updateMetricsState(state, history[i]);
+    const h = history[i];
+    updateMetricsState(state, h.time, h.position, h.error);
   }
   return finalizeMetricsState(state);
 }
