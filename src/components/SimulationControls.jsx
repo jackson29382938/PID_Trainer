@@ -42,12 +42,14 @@ export default function SimulationControls({
 
         <div className="sim-speed">
           <span className="sim-speed-label">Speed</span>
-          <div className="sim-speed-btns">
+          <div className="sim-speed-btns" role="group" aria-label="Simulation speed">
             {[0.5, 1, 2, 3].map(s => (
               <button
                 key={s}
                 className={`sim-speed-btn ${speed === s ? 'active' : ''}`}
                 onClick={() => onSpeedChange(s)}
+                aria-pressed={speed === s}
+                title={s >= 1 ? `Speed ${s}x (${s})` : `Speed ${s}x`}
               >
                 {s}x
               </button>
@@ -77,7 +79,7 @@ export default function SimulationControls({
           className="sim-action-btn"
           onClick={onDisturb}
           disabled={!running}
-          title="Apply a sudden disturbance to test rejection"
+          title="Apply a sudden disturbance to test rejection (D)"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M13 2L3 14h7l-1 8 10-12h-7z" />

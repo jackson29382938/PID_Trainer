@@ -39,9 +39,15 @@ export default function ScoreDisplay({ metrics, best }) {
         {best && (
           <div className="score-best">
             Personal best: <strong>{best.total}</strong>
-            <span className="score-best-stars">
+        <span
+          className="score-best-stars"
+          role="img"
+          aria-label={`${best.stars} out of 3 stars`}
+        >
               {[1, 2, 3].map(i => (
-                <Star key={i} filled={i <= best.stars} size={11} />
+            <span key={i} aria-hidden="true">
+              <Star filled={i <= best.stars} size={11} />
+            </span>
               ))}
             </span>
           </div>
@@ -58,9 +64,15 @@ export default function ScoreDisplay({ metrics, best }) {
   return (
     <div className="score-display">
       <div className="score-main">
-        <div className="score-stars">
+        <div
+          className="score-stars"
+          role="img"
+          aria-label={`${stars} out of 3 stars`}
+        >
           {[1, 2, 3].map(i => (
-            <Star key={i} filled={i <= stars} size={20} />
+            <span key={i} aria-hidden="true">
+              <Star filled={i <= stars} size={20} />
+            </span>
           ))}
         </div>
         <div className="score-number" style={{ color: scoreColor }}>{total}</div>
