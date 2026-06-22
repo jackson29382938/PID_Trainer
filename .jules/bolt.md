@@ -5,3 +5,7 @@
 ## 2026-06-17 - [Efficient Time-Series Filtering for Rendering]
 **Learning:** Using `Array.prototype.filter` to find a visible window in a large chronological history array is $O(N)$ and expensive at 60fps. Since the data is sorted by time, a reverse linear search to find the start index followed by `Array.prototype.slice` is much faster.
 **Action:** Use binary search or reverse linear search for time-windowed data instead of `filter()` when processing sorted history buffers for UI updates.
+
+## 2026-06-21 - [Reducing GC Pressure in Simulation Loops]
+**Learning:** Allocating object literals in high-frequency loops (like the 120Hz physics/metrics loop) creates significant garbage collection pressure. Refactoring internal functions to accept primitive arguments instead of objects allows the engine to avoid these allocations entirely.
+**Action:** In simulation hotspots or high-frequency update loops, prefer passing primitives directly rather than wrapping them in transient objects.
