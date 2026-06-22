@@ -152,14 +152,16 @@ function loadBests() {
   try {
     const raw = JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
     if (!raw || typeof raw !== 'object') return {};
-    const validated = {};
+    const validated = Object.create(null);
     Object.keys(raw).forEach(id => {
+      // Ensure the key is a numeric scenario ID to prevent prototype pollution via keys
+      if (!/^\d+$/.test(id)) return;
       const entry = raw[id];
       if (entry && typeof entry === 'object') {
         const total = typeof entry.total === 'number' ? entry.total : 0;
         const stars = typeof entry.stars === 'number' ? Math.floor(entry.stars) : 0;
+        // Defense-in-depth: explicitly pick only needed properties
         validated[id] = {
-          ...entry,
           total: clamp(total, 0, 100),
           stars: clamp(stars, 0, 3)
         };
