@@ -147,15 +147,17 @@ const maxGraphHeight = () => Math.max(140, window.innerHeight - 220);
 function loadBests() {
   try {
     const raw = JSON.parse(localStorage.getItem(BESTS_KEY) || '{}');
-    if (!raw || typeof raw !== 'object') return {};
-    const validated = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return Object.create(null);
+    const validated = Object.create(null);
     Object.keys(raw).forEach(id => {
+      // Ensure the key is a simple numeric scenario ID
+      if (!/^\d+$/.test(id)) return;
       const entry = raw[id];
-      if (entry && typeof entry === 'object') {
+      if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
         const total = typeof entry.total === 'number' ? entry.total : 0;
         const stars = typeof entry.stars === 'number' ? Math.floor(entry.stars) : 0;
+        // Explicitly pick only needed properties to avoid spreading untrusted data
         validated[id] = {
-          ...entry,
           total: clamp(total, 0, 100),
           stars: clamp(stars, 0, 3)
         };
@@ -163,7 +165,7 @@ function loadBests() {
     });
     return validated;
   } catch {
-    return {};
+    return Object.create(null);
   }
 }
 
@@ -177,7 +179,7 @@ const LAYOUT_DEFAULTS = { panelWidth: 360, graphHeight: 220 };
 function loadLayout() {
   try {
     const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
-    if (!raw || typeof raw !== 'object') return { ...LAYOUT_DEFAULTS };
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...LAYOUT_DEFAULTS };
     return {
       ...LAYOUT_DEFAULTS,
       panelWidth: typeof raw.panelWidth === 'number'
