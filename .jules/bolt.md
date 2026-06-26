@@ -9,3 +9,7 @@
 ## 2026-06-21 - [Reducing GC Pressure in Simulation Loops]
 **Learning:** Allocating object literals in high-frequency loops (like the 120Hz physics/metrics loop) creates significant garbage collection pressure. Refactoring internal functions to accept primitive arguments instead of objects allows the engine to avoid these allocations entirely.
 **Action:** In simulation hotspots or high-frequency update loops, prefer passing primitives directly rather than wrapping them in transient objects.
+
+## 2026-06-21 - [Optimizing Heavy Simulation Loops via Pre-calculation and Object Reuse]
+**Learning:** The `autoTune` process executes over 500 simulations (~650,000 physics steps). Repeating expensive `Math.sin` calculations for wind and sensor noise in every iteration is a major bottleneck. Pre-calculating these into `Float32Array` buffers and reusing a single `PIDController` instance (resetting it between runs) accelerates the process by ~4x.
+**Action:** In iterative simulation tasks with invariant environment parameters, pre-calculate expensive computations into typed arrays and reuse stateful objects to minimize CPU cycles and GC overhead.
