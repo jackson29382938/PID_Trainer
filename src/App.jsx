@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import SCENARIOS from './scenarios/scenarios';
 import PIDController from './physics/PIDController';
-import { createDroneState, stepPhysics } from './physics/DronePhysics';
+import { createDroneState, stepPhysics, MOTOR_COSINES } from './physics/DronePhysics';
 import { computeMetrics, computeHints, computeLiveMetrics, initMetricsState, updateMetricsState, finalizeMetricsState } from './scoring/scoring';
 // The 3D scene pulls in three.js / r3f; load it lazily so the app shell paints
 // first and the heavy libraries download in their own chunk.
@@ -33,9 +33,8 @@ function sensorNoise(time) {
  * Performance: Accepts pre-calculated wind/noise buffers and a reusable
  * controller to avoid ~500 allocations and redundant math during auto-tuning.
  */
-function simulateScore(scenario, physics, gains, controller, windBuffer, noiseBuffer) {
-  const { duration, targetAltitude, windEnabled } = scenario;
-  const { noise } = physics;
+function simulateScore(scenario, physics, gains, controller, windBuffer, noiseBuffer, physicsParams) {
+  const { duration, targetAltitude } = scenario;
 
   const sim = createDroneState();
   const c = controller || new PIDController(gains.p, gains.i, gains.d);
@@ -47,16 +46,34 @@ function simulateScore(scenario, physics, gains, controller, windBuffer, noiseBu
   const metricsState = initMetricsState(targetAltitude, duration);
   let step = 0;
 
-  while (sim.time < duration) {
-    // Optimization: use pre-calculated values if available.
-    const wind = windBuffer ? (windEnabled ? windBuffer[step] : 0) : (windEnabled ? windForce(scenario.windStrength, sim.time) : 0);
-    const meas = noiseBuffer ? (noise > 0 ? sim.position + noiseBuffer[step] : sim.position) : (noise > 0 ? sim.position + noise * 0.05 * sensorNoise(sim.time) : sim.position);
-
-    const out = c.update(targetAltitude, meas, FIXED_DT);
-    stepPhysics(sim, out, wind, FIXED_DT, physics);
-
-    updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
-    step++;
+  if (windBuffer && noiseBuffer) {
+    while (sim.time < duration) {
+      const out = c.update(targetAltitude, sim.position + noiseBuffer[step], FIXED_DT);
+      stepPhysics(sim, out, windBuffer[step], FIXED_DT, physicsParams);
+      updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
+      step++;
+    }
+  } else if (windBuffer) {
+    while (sim.time < duration) {
+      const out = c.update(targetAltitude, sim.position, FIXED_DT);
+      stepPhysics(sim, out, windBuffer[step], FIXED_DT, physicsParams);
+      updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
+      step++;
+    }
+  } else if (noiseBuffer) {
+    while (sim.time < duration) {
+      const out = c.update(targetAltitude, sim.position + noiseBuffer[step], FIXED_DT);
+      stepPhysics(sim, out, 0, FIXED_DT, physicsParams);
+      updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
+      step++;
+    }
+  } else {
+    while (sim.time < duration) {
+      const out = c.update(targetAltitude, sim.position, FIXED_DT);
+      stepPhysics(sim, out, 0, FIXED_DT, physicsParams);
+      updateMetricsState(metricsState, sim.time, sim.position, targetAltitude - sim.position);
+      step++;
+    }
   }
   return finalizeMetricsState(metricsState).total;
 }
@@ -87,12 +104,25 @@ function autoTune(scenario, physics) {
     }
   }
 
+  // Performance: Precompute motor weights and the weight sum once.
+  const cg = physics.cg;
+  const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
+  const w1 = Math.max(0.05, 1 + cg * MOTOR_COSINES[1]);
+  const w2 = Math.max(0.05, 1 + cg * MOTOR_COSINES[2]);
+  const w3 = Math.max(0.05, 1 + cg * MOTOR_COSINES[3]);
+  const physicsParams = {
+    ...physics,
+    weights: [w0, w1, w2, w3],
+    wsum: w0 + w1 + w2 + w3,
+    skipSecondary: true
+  };
+
   // Performance: Reuse a single controller instance to avoid ~500 object allocations.
   const controller = new PIDController(0, 0, 0);
 
   const search = (Ps, Is, Ds) => {
     for (const p of Ps) for (const i of Is) for (const d of Ds) {
-      const total = simulateScore(scenario, physics, { p, i, d }, controller, windBuffer, noiseBuffer);
+      const total = simulateScore(scenario, physics, { p, i, d }, controller, windBuffer, noiseBuffer, physicsParams);
       if (total > best) { best = total; bestG = { p, i, d }; }
     }
   };
