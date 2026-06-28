@@ -184,8 +184,10 @@ function loadBests() {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return Object.create(null);
     const validated = Object.create(null);
     Object.keys(raw).forEach(id => {
-      // Ensure the key is a simple numeric scenario ID
-      if (!/^\d+$/.test(id)) return;
+      // Ensure the key is a numeric scenario ID that exists in our SCENARIOS list
+      const scenarioIdx = parseInt(id, 10);
+      if (isNaN(scenarioIdx) || !SCENARIOS[scenarioIdx]) return;
+
       const entry = raw[id];
       if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
         const total = typeof entry.total === 'number' ? entry.total : 0;
@@ -278,7 +280,9 @@ export default function App() {
     setBestScores(prev => {
       const prior = prev[id];
       if (prior && prior.total >= m.total) return prev;
-      const next = { ...prev, [id]: { total: m.total, stars: m.stars } };
+      // Maintain null prototype for defense-in-depth against prototype pollution
+      const next = Object.assign(Object.create(null), prev);
+      next[id] = { total: m.total, stars: m.stars };
       try { localStorage.setItem(BESTS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
