@@ -46,17 +46,17 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
 
   // Actuator transport delay: the commanded thrust takes effect `delay` seconds
   // later. Modelled as a ring buffer of past commands.
-  const buf = state.thrustBuffer;
-  buf.push(thrustCmd);
-  const delaySteps = Math.round(delay / dt);
   let thrust = thrustCmd;
-  if (delaySteps > 0) {
+  if (delay > 0) {
+    const buf = state.thrustBuffer;
+    buf.push(thrustCmd);
+    const delaySteps = Math.round(delay / dt);
     const idx = buf.length - 1 - delaySteps;
     thrust = idx >= 0 ? buf[idx] : buf[0];
+    // Keep the buffer from growing without bound.
+    const keep = delaySteps + 2;
+    if (buf.length > keep) buf.splice(0, buf.length - keep);
   }
-  // Keep the buffer from growing without bound.
-  const keep = delaySteps + 2;
-  if (buf.length > keep) buf.splice(0, buf.length - keep);
 
   const drag = dragCoeff * state.velocity * Math.abs(state.velocity);
   const netForce = thrust - mass * gravity - drag + windForce;
@@ -71,14 +71,30 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
     state.velocity = -state.velocity * groundRestitution;
   }
 
+  const thrustPercent = (thrust / maxThrust) * 100;
+
+  if (params.skipSecondary) {
+    return {
+      thrust,
+      thrustPercent,
+      acceleration,
+      netForce,
+    };
+  }
+
   // Distribute total thrust across the four motors. A CG offset loads the
   // motors on one side more heavily than the others.
-  const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
-  const w1 = Math.max(0.05, 1 + cg * MOTOR_COSINES[1]);
-  const w2 = Math.max(0.05, 1 + cg * MOTOR_COSINES[2]);
-  const w3 = Math.max(0.05, 1 + cg * MOTOR_COSINES[3]);
-  const wsum = w0 + w1 + w2 + w3;
-  const weights = [w0, w1, w2, w3];
+  let weights = params.weights;
+  let wsum = params.wsum;
+
+  if (!weights) {
+    const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
+    const w1 = Math.max(0.05, 1 + cg * MOTOR_COSINES[1]);
+    const w2 = Math.max(0.05, 1 + cg * MOTOR_COSINES[2]);
+    const w3 = Math.max(0.05, 1 + cg * MOTOR_COSINES[3]);
+    wsum = w0 + w1 + w2 + w3;
+    weights = [w0, w1, w2, w3];
+  }
 
   const motorThrust = [0, 0, 0, 0];
   for (let i = 0; i < 4; i++) {
@@ -93,7 +109,7 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
 
   return {
     thrust,
-    thrustPercent: (thrust / maxThrust) * 100,
+    thrustPercent,
     acceleration,
     netForce,
     motorThrust,

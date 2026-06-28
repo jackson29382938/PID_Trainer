@@ -13,3 +13,11 @@
 ## 2026-06-21 - [Optimizing Heavy Simulation Loops via Pre-calculation and Object Reuse]
 **Learning:** The `autoTune` process executes over 500 simulations (~650,000 physics steps). Repeating expensive `Math.sin` calculations for wind and sensor noise in every iteration is a major bottleneck. Pre-calculating these into `Float32Array` buffers and reusing a single `PIDController` instance (resetting it between runs) accelerates the process by ~4x.
 **Action:** In iterative simulation tasks with invariant environment parameters, pre-calculate expensive computations into typed arrays and reuse stateful objects to minimize CPU cycles and GC overhead.
+
+## 2026-06-25 - [Optimizing Simulation "Hot Paths" with Selective Logic Bypassing]
+**Learning:** Headless simulations (like ) often don't need secondary outputs like individual motor thrusts or heat state. Adding a `skipSecondary` flag to the core physics engine (`stepPhysics`) allows bypassing these (M)$ calculations (where $ is the number of motors), providing a significant speedup in batch processing.
+**Action:** When designing core simulation logic, identify non-essential calculations for headless runs and implement flags to skip them.
+
+## 2026-06-25 - [Optimizing Simulation Hot Paths with Selective Logic Bypassing]
+**Learning:** Headless simulations (like autoTune) often don't need secondary outputs like individual motor thrusts or heat state. Adding a skipSecondary flag to the core physics engine (stepPhysics) allows bypassing these O(M) calculations, providing a significant speedup in batch processing.
+**Action:** When designing core simulation logic, identify non-essential calculations for headless runs and implement flags to skip them.
