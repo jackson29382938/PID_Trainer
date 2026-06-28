@@ -71,6 +71,10 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
     state.velocity = -state.velocity * groundRestitution;
   }
 
+  // Performance Optimization: Skip expensive motor/heat calculations and return
+  // early during headless simulations (auto-tuning).
+  if (params.skipSecondary) return;
+
   // Distribute total thrust across the four motors. A CG offset loads the
   // motors on one side more heavily than the others.
   const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
