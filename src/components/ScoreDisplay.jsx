@@ -2,7 +2,13 @@ import React from 'react';
 
 function Star({ filled, size = 16 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'inline-block' }}>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      style={{ display: 'inline-block' }}
+      aria-hidden="true"
+    >
       <path
         d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
         fill={filled ? '#ffd700' : 'rgba(255,255,255,0.1)'}
@@ -16,7 +22,14 @@ function Star({ filled, size = 16 }) {
 function ScoreGauge({ value, maxValue, label, color, unit = '' }) {
   const pct = maxValue > 0 ? Math.min(100, (value / maxValue) * 100) : 0;
   return (
-    <div className="score-gauge">
+    <div
+      className="score-gauge"
+      role="progressbar"
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={maxValue}
+      aria-label={label}
+    >
       <div className="score-gauge-label">
         <span>{label}</span>
         <span style={{ color }}>{value}{unit}</span>
@@ -39,7 +52,11 @@ export default function ScoreDisplay({ metrics, best }) {
         {best && (
           <div className="score-best">
             Personal best: <strong>{best.total}</strong>
-            <span className="score-best-stars">
+            <span
+              className="score-best-stars"
+              role="img"
+              aria-label={`${best.stars} out of 3 stars`}
+            >
               {[1, 2, 3].map(i => (
                 <Star key={i} filled={i <= best.stars} size={11} />
               ))}
@@ -58,7 +75,11 @@ export default function ScoreDisplay({ metrics, best }) {
   return (
     <div className="score-display">
       <div className="score-main">
-        <div className="score-stars">
+        <div
+          className="score-stars"
+          role="img"
+          aria-label={`${stars} out of 3 stars`}
+        >
           {[1, 2, 3].map(i => (
             <Star key={i} filled={i <= stars} size={20} />
           ))}
