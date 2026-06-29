@@ -87,17 +87,12 @@ function autoTune(scenario, physics) {
     }
   }
 
-  const optimizedPhysics = {
-    ...physics,
-    skipSecondary: true,
-  };
-
   // Performance: Reuse a single controller instance to avoid ~500 object allocations.
   const controller = new PIDController(0, 0, 0);
 
   const search = (Ps, Is, Ds) => {
     for (const p of Ps) for (const i of Is) for (const d of Ds) {
-      const total = simulateScore(scenario, optimizedPhysics, { p, i, d }, controller, windBuffer, noiseBuffer);
+      const total = simulateScore(scenario, physics, { p, i, d }, controller, windBuffer, noiseBuffer);
       if (total > best) { best = total; bestG = { p, i, d }; }
     }
   };

@@ -111,30 +111,33 @@ export function computeMetrics(history, targetAltitude, simDuration) {
 export function computeLiveMetrics(history, target) {
   if (!history || history.length < 2 || target <= 0) return null;
 
-  // Rise time: first time the response reaches 90% of target.
+  // Combine multiple forward passes (rise time, peak, settling time) into one
+  // loop to reduce iteration overhead.
+  const band = target * 0.05;
   let rise = null;
   let peak = -Infinity;
+  let settle = null;
+  let entry = null;
+
   for (let i = 0; i < history.length; i++) {
     const h = history[i];
-    if (h.position > peak) peak = h.position;
-    if (rise === null && h.position >= 0.9 * target) rise = h.time;
+    const pos = h.position;
+    const t = h.time;
+
+    if (pos > peak) peak = pos;
+    if (rise === null && pos >= 0.9 * target) rise = t;
+
+    if (settle === null) {
+      if (Math.abs(pos - target) < band) {
+        if (entry === null) entry = t;
+        if (t - entry >= 1.5) settle = entry;
+      } else {
+        entry = null;
+      }
+    }
   }
 
   const overshoot = Math.max(0, ((peak - target) / target) * 100);
-
-  // Settling time: first sustained (1.5s) entry into the ±5% band.
-  const band = target * 0.05;
-  let settle = null;
-  let entry = null;
-  for (let i = 0; i < history.length; i++) {
-    const h = history[i];
-    if (Math.abs(h.position - target) < band) {
-      if (entry === null) entry = h.time;
-      if (h.time - entry >= 1.5) { settle = entry; break; }
-    } else {
-      entry = null;
-    }
-  }
 
   // Steady-state error: average |error| over the most recent second.
   const now = history[history.length - 1].time;
@@ -151,25 +154,38 @@ export function computeLiveMetrics(history, target) {
 }
 
 export function computeHints(history, targetAltitude, pidValues, elapsed) {
-  if (!history || history.length < 30) return [];
+  const len = history.length;
+  if (!history || len < 30) return [];
 
   const target = targetAltitude;
-  const recent = history.slice(-Math.min(history.length, 120));
 
-  const recentErrors = recent.map(h => Math.abs(h.error));
-  const avgError = recentErrors.reduce((a, b) => a + b, 0) / recentErrors.length;
+  // Performance Optimization: Calculate average error, jitter, and peaks in a
+  // single pass over the recent window to avoid multiple array allocations.
+  const windowSize = Math.min(len, 120);
+  const startIdx = len - windowSize;
 
-  const positions = recent.map(h => h.position);
+  let sumError = 0;
+  let sumJitter = 0;
   const peaks = [];
-  for (let i = 1; i < positions.length - 1; i++) {
-    if (positions[i] > positions[i - 1] && positions[i] > positions[i + 1]) {
-      peaks.push(positions[i]);
+
+  for (let i = startIdx; i < len; i++) {
+    const h = history[i];
+    sumError += Math.abs(h.error);
+    sumJitter += Math.abs(h.velocity || 0);
+
+    // Peak detection: requires looking at neighbors.
+    if (i > startIdx && i < len - 1) {
+      const prev = history[i - 1].position;
+      const curr = h.position;
+      const next = history[i + 1].position;
+      if (curr > prev && curr > next) {
+        peaks.push(curr);
+      }
     }
   }
 
-  const jitter = recent.length > 10
-    ? recent.map(h => Math.abs(h.velocity || 0)).reduce((a, b) => a + b, 0) / recent.length
-    : 0;
+  const avgError = sumError / windowSize;
+  const jitter = windowSize > 10 ? sumJitter / windowSize : 0;
 
   const hints = [];
   const firstPeak = peaks.length > 0 ? peaks[0] : 0;
