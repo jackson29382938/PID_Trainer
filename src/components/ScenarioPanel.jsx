@@ -11,7 +11,12 @@ export default function ScenarioPanel({ scenarioId, onSelect, disabled, bestScor
     <div className="scenario-panel">
       <div className="scenario-header">
         <label className="scenario-title" htmlFor="scenario-select">Scenario</label>
-        <span className="scenario-progress" title="Total stars earned">
+        <span
+          className="scenario-progress"
+          title="Total stars earned"
+          role="img"
+          aria-label={`${totalStars} out of ${maxStars} stars earned`}
+        >
           ★ {totalStars}/{maxStars}
         </span>
       </div>
