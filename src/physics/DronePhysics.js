@@ -22,6 +22,9 @@ const HEAT_GAIN = 0.45;
 const HEAT_COOLING = 0.4;
 const MAX_HEAT = 1.5;
 
+// Reusable result object for headless simulations to avoid GC pressure.
+const SKIP_RESULT = { thrust: 0, thrustPercent: 0, acceleration: 0, netForce: 0 };
+
 export function createDroneState() {
   return {
     position: 0,
@@ -71,16 +74,9 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
     state.velocity = -state.velocity * groundRestitution;
   }
 
-  const thrustPercent = (thrust / maxThrust) * 100;
+  if (params.skipSecondary) return SKIP_RESULT;
 
-  if (params.skipSecondary) {
-    return {
-      thrust,
-      thrustPercent,
-      acceleration,
-      netForce,
-    };
-  }
+  const thrustPercent = (thrust / maxThrust) * 100;
 
   // Distribute total thrust across the four motors. A CG offset loads the
   // motors on one side more heavily than the others.
