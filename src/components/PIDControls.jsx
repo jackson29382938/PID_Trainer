@@ -39,7 +39,7 @@ function GainInput({ paramKey, value, name, min, max, step, color, disabled, onC
   );
 }
 
-export default function PIDControls({ values, onChange, disabled }) {
+export default function PIDControls({ values, onChange, onReset, isDefault, disabled }) {
   const setValue = (key, num) => {
     if (!Number.isNaN(num)) onChange({ ...values, [key]: num });
   };
@@ -48,7 +48,14 @@ export default function PIDControls({ values, onChange, disabled }) {
     <div className="pid-controls">
       <div className="pid-header">
         <span className="pid-title">PID Gains</span>
-        <span className="pid-subtitle">Drag or type</span>
+        <button
+          className="phys-reset"
+          onClick={onReset}
+          disabled={disabled || isDefault}
+          title="Reset PID gains to scenario defaults"
+        >
+          Reset
+        </button>
       </div>
       {PARAMS.map(({ key, label, name, color, min, max, step }) => (
         <div key={key} className="pid-row">
