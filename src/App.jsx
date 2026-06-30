@@ -305,6 +305,10 @@ export default function App() {
   const scenario = SCENARIOS[scenarioId];
   const best = bestScores[scenarioId];
 
+  const isPidDefault = pidValues.p === scenario.initialP &&
+                       pidValues.i === scenario.initialI &&
+                       pidValues.d === scenario.initialD;
+
   const recordBest = useCallback((id, m) => {
     if (!m || !m.total) return;
     setBestScores(prev => {
@@ -386,6 +390,14 @@ export default function App() {
   const handleDisturb = useCallback(() => {
     impulseRef.current -= 5;
   }, []);
+
+  const handlePidReset = useCallback(() => {
+    setPidValues({
+      p: scenario.initialP,
+      i: scenario.initialI,
+      d: scenario.initialD,
+    });
+  }, [scenario.initialP, scenario.initialI, scenario.initialD]);
 
   // Keyboard shortcuts: Space = play/pause, R = reset. Ignored while typing.
   useEffect(() => {
@@ -689,6 +701,9 @@ export default function App() {
           <PIDControls
             values={pidValues}
             onChange={setPidValues}
+            onReset={handlePidReset}
+            isDefault={isPidDefault}
+            disabled={running}
           />
           <PhysicsControls
             values={physics}
