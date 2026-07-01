@@ -128,4 +128,7 @@ const SCENARIOS = [
   },
 ];
 
+SCENARIOS.forEach(Object.freeze);
+Object.freeze(SCENARIOS);
+
 export default SCENARIOS;

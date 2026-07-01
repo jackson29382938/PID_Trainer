@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const PHYSICS_DEFAULTS = { mass: 1.0, drag: 0.2, delay: 0, noise: 0, cg: 0 };
+export const PHYSICS_DEFAULTS = Object.freeze({ mass: 1.0, drag: 0.2, delay: 0, noise: 0, cg: 0 });
 
 const PARAMS = [
   { key: 'mass',  label: 'MASS',  name: 'Mass',              min: 0.5, max: 3,   step: 0.1,  unit: ' kg', dec: 1 },

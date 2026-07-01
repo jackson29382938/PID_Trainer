@@ -1,4 +1,4 @@
-export const PHYSICS = {
+export const PHYSICS = Object.freeze({
   gravity: 9.81,
   maxThrust: 22.0,
   groundRestitution: 0.2,
@@ -9,13 +9,13 @@ export const PHYSICS = {
   delay: 0,
   noise: 0,
   cg: 0,
-};
+});
 
 // Motor arm angles (must match DroneModel's ARM_ANGLES so the heat readout and
 // the 3D props line up).
-export const MOTOR_ANGLES = [45, 135, 225, 315].map(d => (d * Math.PI) / 180);
+export const MOTOR_ANGLES = Object.freeze([45, 135, 225, 315].map(d => (d * Math.PI) / 180));
 // Precompute cosines to avoid 4 Math.cos calls per physics step (120Hz).
-export const MOTOR_COSINES = MOTOR_ANGLES.map(Math.cos);
+export const MOTOR_COSINES = Object.freeze(MOTOR_ANGLES.map(Math.cos));
 
 const NOMINAL_PER_MOTOR = PHYSICS.maxThrust / 4;
 const HEAT_GAIN = 0.45;
