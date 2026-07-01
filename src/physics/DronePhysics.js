@@ -31,8 +31,9 @@ export function createDroneState() {
     velocity: 0,
     time: 0,
     completed: false,
-    thrustBuffer: [],          // recent thrust commands, for actuator delay
-    motorHeat: [0, 0, 0, 0],   // per-motor thermal state (0..MAX_HEAT)
+    thrustBuffer: new Float32Array(64), // circular buffer for actuator delay
+    thrustIdx: 0,
+    motorHeat: [0, 0, 0, 0],            // per-motor thermal state (0..MAX_HEAT)
   };
 }
 
@@ -48,17 +49,16 @@ export function stepPhysics(state, pidOutput, windForce, dt, params = {}) {
   thrustCmd = Math.max(0, Math.min(maxThrust, thrustCmd));
 
   // Actuator transport delay: the commanded thrust takes effect `delay` seconds
-  // later. Modelled as a ring buffer of past commands.
+  // later. Modelled as a circular buffer of past commands.
   let thrust = thrustCmd;
   if (delay > 0) {
+    const delaySteps = params.delaySteps ?? Math.round(delay / dt);
     const buf = state.thrustBuffer;
-    buf.push(thrustCmd);
-    const delaySteps = Math.round(delay / dt);
-    const idx = buf.length - 1 - delaySteps;
-    thrust = idx >= 0 ? buf[idx] : buf[0];
-    // Keep the buffer from growing without bound.
-    const keep = delaySteps + 2;
-    if (buf.length > keep) buf.splice(0, buf.length - keep);
+    const len = buf.length;
+    buf[state.thrustIdx] = thrustCmd;
+    const readIdx = (state.thrustIdx - delaySteps + len) % len;
+    thrust = buf[readIdx];
+    state.thrustIdx = (state.thrustIdx + 1) % len;
   }
 
   const drag = dragCoeff * state.velocity * Math.abs(state.velocity);
