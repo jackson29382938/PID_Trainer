@@ -104,7 +104,7 @@ function autoTune(scenario, physics) {
     }
   }
 
-  // Performance: Precompute motor weights and the weight sum once.
+  // Performance: Precompute motor weights, the weight sum, and delay steps once.
   const cg = physics.cg;
   const w0 = Math.max(0.05, 1 + cg * MOTOR_COSINES[0]);
   const w1 = Math.max(0.05, 1 + cg * MOTOR_COSINES[1]);
@@ -114,6 +114,7 @@ function autoTune(scenario, physics) {
     ...physics,
     weights: [w0, w1, w2, w3],
     wsum: w0 + w1 + w2 + w3,
+    delaySteps: Math.round(physics.delay / FIXED_DT),
     skipSecondary: true
   };
 

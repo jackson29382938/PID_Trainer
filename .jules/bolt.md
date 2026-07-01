@@ -21,3 +21,7 @@
 ## 2026-06-25 - [Eliminating GC Pressure in Simulation Loops with Reusable Result Objects]
 **Learning:** Even when skipping complex calculations, returning a new result object in a high-frequency loop (120Hz) over hundreds of simulations creates significant GC pressure. Using a static, reusable result object for headless runs maintains API compatibility while reducing the benchmark time from ~365ms to ~50ms (a 7x speedup).
 **Action:** In simulation "hot paths," if a return object is required for API consistency but its contents are ignored, return a static reusable object instead of allocating a new one every frame.
+
+## 2026-06-25 - [O(1) Actuator Delay with Circular Buffers]
+**Learning:** Using `Array.push()` and `Array.splice()` to model an actuator delay in a high-frequency loop is $O(N)$ and triggers frequent allocations. Replacing it with a fixed-size `Float32Array` circular buffer and a pointer reduces management to $O(1)$ and eliminates GC pressure.
+**Action:** For delay lines or history windows in performance-critical code, always prefer circular buffers over array push/shift/splice operations.
